@@ -21,6 +21,7 @@ Thumbs.db
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
+.terraform/terraform.tfvars
 
 # Google Cloud credentials
 gcp-key.json

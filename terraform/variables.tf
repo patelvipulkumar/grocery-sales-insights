@@ -1,10 +1,21 @@
+variable "credentials" {
+  description = "My Credentials"
+  default     = "/home/NEOPOSTADVPatel_na/.gc/ny-rides.json"
+  #ex: if you have a directory where this file is called keys with your service account json file
+  #saved there as my-creds.json you could use default = "./keys/my-creds.json"
+}
+
 variable "project_id" {
   type = string
 }
 
-variable "region" {
+variable "location" {
   type    = string
   default = "US"
+}
+
+variable "region" {
+  type    = string
 }
 
 variable "kaggle_api_token" {
