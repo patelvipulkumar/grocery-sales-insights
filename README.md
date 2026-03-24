@@ -443,7 +443,6 @@ docker-compose up
 
 ## 📚 Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — Detailed component descriptions
 - [DBT Docs](https://docs.getdbt.com/) — Data transformation best practices
 - [Airflow Docs](https://airflow.apache.org/) — Workflow orchestration guide
 - [Terraform Docs](https://www.terraform.io/docs/providers/google) — GCP resource management
@@ -456,29 +455,3 @@ docker-compose up
 4. Push: `git push origin feature/your-feature`
 5. Open PR and ensure CI passes
 6. Merge to main (auto-deploys via GitHub Actions)
-
-## 📄 License
-
-MIT
-
-    B --> H[Secret Manager (kaggle-api-token, GCP creds)]
-    B --> I[Terraform infra provisioning]
-
-    subgraph Local Dev
-      J[docker-compose: airflow, postgres, redis, spark]
-      J -- runs --> B
-      J -- contains --> E
-      J -- contains --> F
-    end
-
-    subgraph GCP
-      C
-      D
-      E
-      F
-      G
-      H
-      I
-    end
-```
-
