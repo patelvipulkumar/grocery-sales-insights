@@ -37,6 +37,30 @@ resource "google_secret_manager_secret_version" "kaggle_api_version" {
   secret_data = var.kaggle_api_token
 }
 
+resource "google_secret_manager_secret" "looker_studio_report_id" {
+  secret_id = "looker-studio-report-id"
+  replication {
+    automatic = true
+  }
+}
+
+resource "google_secret_manager_secret_version" "looker_studio_report_id_version" {
+  secret      = google_secret_manager_secret.looker_studio_report_id.id
+  secret_data = var.looker_studio_report_id
+}
+
+resource "google_secret_manager_secret" "airflow_db_password" {
+  secret_id = "airflow-db-password"
+  replication {
+    automatic = true
+  }
+}
+
+resource "google_secret_manager_secret_version" "airflow_db_password_version" {
+  secret      = google_secret_manager_secret.airflow_db_password.id
+  secret_data = var.airflow_db_password
+}
+
 resource "google_project_iam_binding" "bigquery" {
   role    = "roles/bigquery.dataEditor"
   members = ["serviceAccount:${google_service_account.airflow.email}"]
@@ -44,5 +68,10 @@ resource "google_project_iam_binding" "bigquery" {
 
 resource "google_project_iam_binding" "storage" {
   role    = "roles/storage.admin"
+  members = ["serviceAccount:${google_service_account.airflow.email}"]
+}
+
+resource "google_project_iam_binding" "secret_manager" {
+  role    = "roles/secretmanager.secretAccessor"
   members = ["serviceAccount:${google_service_account.airflow.email}"]
 }

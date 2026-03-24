@@ -129,13 +129,15 @@ def run_spark(**context):
 
 
 def refresh_looker_studio(**context):
-    report_id = os.getenv("LOOKER_STUDIO_REPORT_ID")
+    hook = CloudSecretManagerHook(project_id=PROJECT_ID)
+    report_id = hook.get_secret("looker-studio-report-id")
+    
     if not report_id:
-        raise ValueError("LOOKER_STUDIO_REPORT_ID is not defined in the environment")
+        raise ValueError("looker-studio-report-id is not defined in Secret Manager")
 
     # Use Google credentials from Airflow connection
-    hook = GoogleBaseHook(gcp_conn_id="google_cloud_default")
-    creds = hook.get_credentials()
+    gcp_hook = GoogleBaseHook(gcp_conn_id="google_cloud_default")
+    creds = gcp_hook.get_credentials()
     if not creds.valid:
         creds.refresh(Request())
 

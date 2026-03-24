@@ -13,3 +13,15 @@ output "bq_raw_dataset" {
 output "bq_analytics_dataset" {
   value = google_bigquery_dataset.analytics.dataset_id
 }
+
+output "kaggle_api_secret_name" {
+  value = google_secret_manager_secret.kaggle_api.id
+}
+
+output "looker_studio_secret_name" {
+  value = google_secret_manager_secret.looker_studio_report_id.id
+}
+
+output "airflow_db_password_secret_name" {
+  value = google_secret_manager_secret.airflow_db_password.id
+}
