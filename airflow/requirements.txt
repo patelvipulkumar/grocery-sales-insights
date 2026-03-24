@@ -1,0 +1,13 @@
+apache-airflow-providers-google==2026.1.0
+apache-airflow-providers-apache-spark==2026.1.0
+apache-airflow-providers-postgres==2026.1.0
+apache-airflow-providers-amazon==2026.1.0
+apache-airflow==3.0.0
+kaggle==1.5.16
+dbt-core==1.6.0
+dbt-bigquery==1.6.0
+pandas
+google-cloud-secret-manager
+google-cloud-storage
+google-auth
+requests

@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.python-version
+.env
+.venv/
+venv/
+
+# System
+.DS_Store
+Thumbs.db
+
+# vscode
+.vscode/
+
+# terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Google Cloud credentials
+gcp-key.json
+
+# Airflow
+airflow.cfg
+logs/
+
+# dbt
+dbt_packages/
+target/
+
+data/
+
+# local docker compose states
+*.log
+*.pid
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS generated
+ehthumbs.db
+Icon?
+
+# Ignore all secret files
+*secret*

@@ -1,0 +1,87 @@
+version: 2
+
+sources:
+  - name: grocery_raw
+    description: Raw grocery sales data loaded from Kaggle dataset
+    database: "{{ env_var('GCP_PROJECT') }}"
+    schema: grocery_raw
+    tables:
+      - name: sales
+        description: Raw sales transactions data
+        columns:
+          - name: SalesID
+            description: Unique identifier for each sale
+          - name: SalesPersonID
+            description: Employee responsible for the sale
+          - name: CustomerID
+            description: Customer making the purchase
+          - name: ProductID
+            description: Product being sold
+          - name: Quantity
+            description: Number of units sold
+          - name: Discount
+            description: Discount applied to the sale
+          - name: TotalPrice
+            description: Final sale price after discounts
+          - name: SalesDate
+            description: Date and time of the sale
+          - name: TransactionNumber
+            description: Unique identifier for the transaction
+
+      - name: products
+        description: Product catalog with detailed product information
+        columns:
+          - name: ProductID
+            description: Unique identifier for each product
+          - name: ProductName
+            description: Name of the product
+          - name: Price
+            description: Price per unit of the product
+          - name: CategoryID
+            description: Unique category identifier
+          - name: Class
+            description: Classification of the product
+          - name: ModifyDate
+            description: Last modified date
+          - name: Resistant
+            description: Product resistance category
+          - name: IsAllergic
+            description: Indicates whether the item is an allergen
+          - name: VitalityDays
+            description: Product vital type classification
+
+      - name: customers
+        description: Customer demographic and profile information
+        columns:
+          - name: CustomerID
+            description: Unique identifier for each customer
+          - name: FirstName
+            description: First name of the customer
+          - name: MiddleInitial
+            description: Middle initial of the customer
+          - name: LastName
+            description: Last name of the customer
+          - name: cityID
+            description: City of the customer
+          - name: Address
+            description: Residential address of the customer
+
+      - name: employees
+        description: Employee information and demographics
+        columns:
+          - name: EmployeeID
+            description: Unique identifier for each employee
+          - name: FirstName
+            description: First name of the employee
+          - name: MiddleInitial
+            description: Middle initial of the employee
+          - name: LastName
+            description: Last name of the employee
+          - name: BirthDate
+            description: Date of birth of the employee
+          - name: Gender
+            description: Gender of the employee
+          - name: CityID
+            description: Unique identifier for city
+          - name: HireDate
+            description: Date when the employee was hired
