@@ -1,8 +1,12 @@
 name: CD
 
+# Uncomment to enable CD on main branch push after end-to-end testing complete
+#on:
+#  push:
+#    branches: [main]
+
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   deploy:

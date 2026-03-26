@@ -32,7 +32,7 @@
 
 ## 💼 Project Overview
 
-**Grocery Sales Insights** is a production-ready, **cloud-native data analytics platform** designed to transform raw grocery sales transaction data into actionable business intelligence. Built on the [Kaggle Grocery Sales Dataset](https://www.kaggle.com/datasets/drexibiza/grocery-sales-dataset) with 6.7M+ transaction records, this project demonstrates modern data engineering best practices.
+**Grocery Sales Insights** is a production-ready, **cloud-native data analytics platform** designed to transform raw grocery sales transaction data into actionable business intelligence. Built on the [Kaggle Grocery Sales Dataset](https://www.kaggle.com/datasets/andrexibiza/grocery-sales-dataset) with 6.7M+ transaction records, this project demonstrates modern data engineering best practices.
 
 The platform automates the complete data lifecycle—from ingestion to transformation to visualization—enabling retailers to answer critical business questions:
 
@@ -214,10 +214,20 @@ graph TB
 
 ### Prerequisites
 - Docker & Docker Compose v2.24.0+
-- Python 3.11+
+- Python 3.12+
 - Git
 - GCP account with service account key (for deployment)
 - Kaggle API token
+
+Note: CI is patch-pinned to Python 3.12.10 in `.github/workflows/ci.yml` for reproducible pipeline behavior.
+
+### Common Setup Commands
+
+```bash
+git clone https://github.com/patelvipulkumar/grocery-sales-insights.git
+cd grocery-sales-insights
+cp .env.example .env
+```
 
 ### 1. Setup Local Environment
 
@@ -225,13 +235,47 @@ graph TB
 git clone https://github.com/patelvipulkumar/grocery-sales-insights.git
 cd grocery-sales-insights
 
-# Create .env file for local development
-cat > .env << EOF
-GCP_PROJECT=your-project-id
-RAW_BUCKET=your-project-id-grocery-raw
-LOOKER_STUDIO_REPORT_ID=your-report-id
-EOF
+# Create local environment file from template
+cp .env.example .env
+
+# Edit .env and set values for your environment
+# GCP_PROJECT=your-project-id
+# RAW_BUCKET=grocery-raw
+# LOOKER_STUDIO_REPORT_ID=your-report-id
 ```
+
+### 1.1 Required Local Files (`.env` and `gcp-key.json`)
+
+Create a `.env` file in the project root with at least:
+
+```dotenv
+GCP_PROJECT=your-gcp-project-id
+RAW_BUCKET=grocery-raw
+KAGGLE_USERNAME=your-kaggle-username
+KAGGLE_KEY=your-kaggle-api-key
+AIRFLOW_JWT_SECRET=airflow-jwt-secret-dev
+LOOKER_STUDIO_REPORT_ID=your-looker-report-id
+GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/gcp-key.json
+```
+
+Create a service-account key file named `gcp-key.json` in the project root (same level as `docker-compose.yml`).
+
+Minimum required IAM roles for the service account:
+- Storage Admin (for GCS upload)
+- BigQuery Data Editor + BigQuery Job User (for BigQuery load/write)
+- Secret Manager Secret Accessor (if using Secret Manager for runtime secrets)
+
+The file is mounted into Airflow containers as:
+- Host: `./gcp-key.json`
+- Container path: `/opt/airflow/gcp-key.json`
+
+Create the local Airflow simple-auth password file from the example:
+
+```bash
+cp airflow/simple_auth_manager_passwords.example.json airflow/simple_auth_manager_passwords.json
+```
+
+This local file is used by Docker Compose and should not be committed.
 
 ### 2. Start Services with Docker Compose
 
@@ -242,9 +286,16 @@ docker-compose up -d
 docker-compose logs -f airflow-webserver
 
 # Access Airflow UI
-# URL: http://localhost:8080
+# URL: http://localhost:8082
 # Username: admin
 # Password: admin
+```
+
+Rebuild when dependencies change (for example `airflow/requirements.txt` or `airflow/Dockerfile`):
+
+```bash
+docker-compose build airflow-webserver airflow-scheduler airflow-worker
+docker-compose up -d --force-recreate airflow-webserver airflow-scheduler airflow-worker
 ```
 
 ### 3. Trigger the DAG
@@ -260,28 +311,53 @@ docker-compose exec airflow-webserver airflow dags trigger grocery_sales_end_to_
 
 ```bash
 export GCP_PROJECT="your-project-id"
-export RAW_BUCKET="${GCP_PROJECT}-grocery-raw"
+export RAW_BUCKET="grocery-raw"
+export LOOKER_STUDIO_REPORT_ID="your-looker-studio-report-id"
+export KAGGLE_USERNAME="your-kaggle-username"
+export KAGGLE_KEY="your-kaggle-api-key"
 
-gcloud auth login
-gcloud config set project $GCP_PROJECT
+generate key using ssh-keygen and get ssh key from .pub file and add it under metadata section on Google Cloud
+
+export GOOGLE_APPLICATION_CREDENTIALS="/path-to-gcp-key.json"
+
+Create VM with particular image and necessary storage configuration
+
+Connect VM using private key generated in earlier step using below command 
+
+ssh -i :key user@ip-address
+
+use below command to authenticate on GCP VM
+
+gcloud auth application-default login
+
+# SSH into VM
+gcloud compute ssh grocery-analytics-vm --zone=us-central1-a
+
 ```
 
-### 2. Configure Terraform
+### 2. # Clone and deploy 
 
-Create `terraform/terraform.tfvars`:
+```bash
+git clone https://github.com/patelvipulkumar/grocery-sales-insights.git
+cd grocery-sales-insights
+```
+
+### 3. Configure Terraform Initialize & Apply Terraform
+
+```bash
+cd terraform
+```
+### Create `terraform/terraform.tfvars`:
 
 ```hcl
 project_id = "your-project-id"
-region = "us-central1"
+region = "Region of gcp VM"
 kaggle_api_token = "your-kaggle-api-key"
 looker_studio_report_id = "your-looker-report-id"
 airflow_db_password = "strong-password"
 ```
 
-### 3. Initialize & Apply Terraform
-
 ```bash
-cd terraform
 terraform init
 terraform plan
 terraform apply
@@ -291,26 +367,9 @@ terraform output -json > outputs.json
 cd ..
 ```
 
-### 4. Provision GCP VM
+### 3. docker-compose
 
 ```bash
-gcloud compute instances create grocery-analytics-vm \
-  --zone=us-central1-a \
-  --machine-type=e2-standard-4 \
-  --image=ubuntu-2204-jammy-v20240319 \
-  --metadata-from-file startup-script=setup.sh \
-  --scopes=https://www.googleapis.com/auth/cloud-platform
-```
-
-### 5. Deploy Services
-
-```bash
-# SSH into VM
-gcloud compute ssh grocery-analytics-vm --zone=us-central1-a
-
-# Clone and deploy
-git clone https://github.com/patelvipulkumar/grocery-sales-insights.git
-cd grocery-sales-insights
 docker-compose up -d
 ```
 
@@ -323,11 +382,10 @@ The `grocery_sales_end_to_end` DAG executes sequentially:
 3. **upload_to_gcs** — Uploads CSV files to Google Cloud Storage
 4. **load_to_bigquery** — Loads raw data into BigQuery `grocery_raw` dataset
 5. **run_dbt** — Executes DBT pipeline:
-   - `dbt deps` — Install dependencies
-   - `dbt seed` — Load reference data (categories, cities, countries)
-   - `dbt run` — Execute staging + mart models
-   - `dbt test` — Run data quality tests
+    - Seed files are prepared in `dbt/data/` for dbt-managed reference tables
+    - Current implementation may skip dbt commands depending on runtime environment
 6. **run_spark** — Customer segmentation and product recommendations
+    - Runs on Spark standalone first, then retries in local Spark mode if cluster execution fails
 7. **refresh_looker_studio** — Refresh Looker Studio dashboard cache
 
 ## 📁 Project Structure
@@ -379,8 +437,16 @@ Airflow DAG fetches secrets at runtime using `CloudSecretManagerHook`.
 | Variable | Description |
 |----------|-------------|
 | `GCP_PROJECT` | GCP project ID |
-| `RAW_BUCKET` | GCS bucket for raw data |
+| `RAW_BUCKET` | GCS bucket for raw data (default used in this project: `grocery-raw`) |
 | `LOOKER_STUDIO_REPORT_ID` | Looker Studio dashboard ID |
+| `KAGGLE_USERNAME` | Kaggle username for dataset download |
+| `KAGGLE_KEY` | Kaggle API key/token |
+| `AIRFLOW_JWT_SECRET` | Shared JWT secret for Airflow API auth between services |
+| `GOOGLE_APPLICATION_CREDENTIALS` | In-container credentials path (`/opt/airflow/gcp-key.json`) |
+
+Notes:
+- Keep `.env` in project root so Docker Compose automatically loads it.
+- Do not commit `.env` or `gcp-key.json`.
 
 ## 🧪 Testing & Quality
 
@@ -413,6 +479,8 @@ flake8 airflow/dags/
 
 ## 🐛 Troubleshooting
 
+If you see missing environment variable warnings (for example `GCP_PROJECT` or `RAW_BUCKET`), run `cp .env.example .env` and update values in `.env`.
+
 ### DBT Compilation Fails
 ```bash
 cd dbt
@@ -432,6 +500,9 @@ gcloud auth application-default login
 # or
 gcloud iam service-accounts keys create gcp-key.json \
   --iam-account=airflow-sa@${GCP_PROJECT}.iam.gserviceaccount.com
+
+# Ensure file exists at project root for Docker mount
+ls -l ./gcp-key.json
 ```
 
 ### Docker Compose Permission Denied

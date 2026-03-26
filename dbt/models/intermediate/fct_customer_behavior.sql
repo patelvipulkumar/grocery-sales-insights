@@ -13,7 +13,7 @@ with customer_purchases as (
         avg(st.total_price) as avg_transaction_value,
         max(st.sales_date) as last_purchase_date,
         min(st.sales_date) as first_purchase_date,
-        date_diff(max(st.sales_date), min(st.sales_date), day) as days_between_first_last_purchase,
+        date_diff(date(max(st.sales_date)), date(min(st.sales_date)), day) as days_between_first_last_purchase,
         sum(st.discount) as total_discount_received,
         avg(st.discount) as avg_discount_per_transaction
     from {{ ref('st_sales') }} st
@@ -40,8 +40,8 @@ behavior_metrics as (
             else 'Low Value'
         end as customer_value_segment,
         case
-            when date_diff(current_date(), last_purchase_date, day) <= 30 then 'Active'
-            when date_diff(current_date(), last_purchase_date, day) <= 90 then 'At Risk'
+            when date_diff(current_date(), date(last_purchase_date), day) <= 30 then 'Active'
+            when date_diff(current_date(), date(last_purchase_date), day) <= 90 then 'At Risk'
             else 'Dormant'
         end as engagement_status,
         current_timestamp() as dbt_loaded_at

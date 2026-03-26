@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15
@@ -18,63 +16,124 @@ services:
       - "6379:6379"
 
   airflow-webserver:
-    image: apache/airflow:3.0.0
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
     depends_on:
       - postgres
       - redis
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__SECRETS__BACKEND: airflow.providers.google.cloud.secrets.secret_manager.CloudSecretManagerBackend
-      AIRFLOW__SECRETS__BACKEND_KWARGS: '{"projects":"${GCP_PROJECT}","variables_prefix":"airflow-variables","connections_prefix":"airflow-connections"}'
+      AIRFLOW__SECRETS__BACKEND_KWARGS: '{"project_id":"${GCP_PROJECT:-your-project-id}","variables_prefix":"airflow-variables","connections_prefix":"airflow-connections"}'
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
       AIRFLOW__LOGGING__LOG_LEVEL: INFO
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:ADMIN
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_manager_passwords.json
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
       GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
       RAW_BUCKET: ${RAW_BUCKET:-your-project-id-grocery-raw}
+      LOOKER_STUDIO_REPORT_ID: ${LOOKER_STUDIO_REPORT_ID:-your-report-id}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/requirements.txt:/requirements.txt
+      - ./airflow/logs:/opt/airflow/logs
       - ./dbt:/opt/airflow/dbt
       - ./spark:/opt/airflow/spark
       - ./terraform:/opt/airflow/terraform
+      - ./airflow/simple_auth_manager_passwords.json:/opt/airflow/simple_auth_manager_passwords.json
       - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
     ports:
-      - "8080:8080"
-    command: bash -c "pip install -r /requirements.txt && airflow db init && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com --skip-if-exists && airflow webserver"
+      - "8082:8080"
+    command: bash -c "airflow db migrate && airflow api-server"
 
   airflow-scheduler:
-    image: apache/airflow:3.0.0
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
     depends_on:
       - postgres
       - redis
       - airflow-webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__SECRETS__BACKEND: airflow.providers.google.cloud.secrets.secret_manager.CloudSecretManagerBackend
+      AIRFLOW__SECRETS__BACKEND_KWARGS: '{"project_id":"${GCP_PROJECT:-your-project-id}","variables_prefix":"airflow-variables","connections_prefix":"airflow-connections"}'
+      AIRFLOW__LOGGING__LOG_LEVEL: INFO
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
+      LOOKER_STUDIO_REPORT_ID: ${LOOKER_STUDIO_REPORT_ID:-your-report-id}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/requirements.txt:/requirements.txt
+      - ./airflow/logs:/opt/airflow/logs
       - ./dbt:/opt/airflow/dbt
       - ./spark:/opt/airflow/spark
+      - ./terraform:/opt/airflow/terraform
       - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
-    command: bash -c "pip install -r /requirements.txt && airflow scheduler"
+    command: bash -c "airflow db migrate && airflow scheduler"
+
+  airflow-worker:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+      - redis
+      - airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__WORKER_LOG_SERVER_PORT: '8793'
+      AIRFLOW__SECRETS__BACKEND: airflow.providers.google.cloud.secrets.secret_manager.CloudSecretManagerBackend
+      AIRFLOW__SECRETS__BACKEND_KWARGS: '{"project_id":"${GCP_PROJECT:-your-project-id}","variables_prefix":"airflow-variables","connections_prefix":"airflow-connections"}'
+      AIRFLOW__LOGGING__LOG_LEVEL: INFO
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./dbt:/opt/airflow/dbt
+      - ./spark:/opt/airflow/spark
+      - ./terraform:/opt/airflow/terraform
+      - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
+    command: bash -c "airflow celery worker"
 
   spark-master:
-    image: bitnami/spark:3.4
+    image: bde2020/spark-master:3.3.0-hadoop3.3
     environment:
-      - SPARK_MODE=master
+      - INIT_DAEMON_STEP=setup_spark
     ports:
       - "8081:8080"
 
   spark-worker:
-    image: bitnami/spark:3.4
+    image: bde2020/spark-worker:3.3.0-hadoop3.3
     environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_MASTER=spark://spark-master:7077
 
 volumes:
   pgdata:

@@ -1,4 +1,4 @@
-{{ config(materialized='incremental', unique_key='SalesID') }}
+{{ config(materialized='incremental', unique_key='sales_id') }}
 
 with raw as (
     select *

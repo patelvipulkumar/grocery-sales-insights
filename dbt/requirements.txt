@@ -1,0 +1,3 @@
+# dbt CLI dependencies (separate from airflow requirements)
+dbt-core==1.8.0
+dbt-bigquery==1.8.0

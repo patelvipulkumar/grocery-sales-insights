@@ -29,6 +29,7 @@ gcp-key.json
 # Airflow
 airflow.cfg
 logs/
+airflow/simple_auth_manager_passwords.json
 
 # dbt
 dbt_packages/
