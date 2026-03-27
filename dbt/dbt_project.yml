@@ -1,3 +1,7 @@
+# High-level logic:
+# Configures dbt project structure, model materialization strategy, and
+# schema routing for staging, intermediate, and analytics marts.
+
 name: grocery_dbt
 version: '1.0'
 config-version: 2
@@ -6,5 +10,23 @@ model-paths: ["models"]
 analysis-paths: ["analysis"]
 test-paths: ["tests"]
 seed-paths: ["data"]
+macro-paths: ["macros"]
 target-path: "target"
 clean-targets: ["target", "dbt_modules"]
+
+seeds:
+  grocery_dbt:
+    +schema: grocery_raw
+
+models:
+  grocery_dbt:
+    staging:
+      +schema: grocery_staging
+      +materialized: table
+    intermediate:
+      +schema: grocery_staging
+      +materialized: table
+    marts:
+      +schema: grocery_analytics
+      +materialized: table
+

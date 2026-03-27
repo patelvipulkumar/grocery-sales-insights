@@ -1,3 +1,7 @@
+-- High-level logic:
+-- Builds an employee dimension with location and tenure-based attributes used
+-- for sales performance benchmarking and workforce analytics.
+
 {{ config(
     materialized='table',
     description='Employee dimension with department and role information'

@@ -1,3 +1,7 @@
+-- High-level logic:
+-- Builds a customer dimension by enriching raw customer records with city and
+-- country reference data for geography-aware analytics.
+
 {{ config(
     materialized='table',
     description='Customer dimension with demographic and account details'

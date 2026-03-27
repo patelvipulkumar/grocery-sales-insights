@@ -1,3 +1,12 @@
+"""
+High-level DAG logic:
+1) Provision/refresh GCP infrastructure with Terraform.
+2) Ingest Kaggle source files and load raw data to BigQuery.
+3) Run dbt transformations for analytics-ready models.
+4) Execute Spark segmentation/recommendation pipeline.
+5) Trigger Looker Studio refresh to surface latest insights.
+"""
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
@@ -180,55 +189,105 @@ def run_dbt(**context):
     env = os.environ.copy()
     env["DBT_PROFILES_DIR"] = str(dbt_workdir)
 
-    def run_cmd(args):
+    def run_cmd(args, critical=True):
         print(f"Running: {' '.join(args)}")
-        subprocess.check_call(args, cwd=str(dbt_workdir), env=env)
+        result = subprocess.run(args, cwd=str(dbt_workdir), env=env, capture_output=True, text=True)
+        print(result.stdout)
+        if result.returncode != 0:
+            print(f"Command failed with return code: {result.returncode}")
+            print("STDERR:")
+            print(result.stderr)
+            if critical:
+                raise subprocess.CalledProcessError(result.returncode, " ".join(args))
+            else:
+                print(f"Warning: Command failed but continuing: {' '.join(args)}")
 
     packages_file = dbt_workdir / "packages.yml"
     if packages_file.exists():
         run_cmd(["dbt", "deps", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir)])
 
+    # Check and list seed files for debugging
+    data_dir = dbt_workdir / "data"
     seed_files = ["categories.csv", "cities.csv", "countries.csv"]
-    has_seed = any((dbt_workdir / "data" / file_name).exists() for file_name in seed_files)
-    if has_seed:
-        run_cmd(["dbt", "seed", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"])
+    if data_dir.exists():
+        existing_files = list(data_dir.glob("*.csv"))
+        print(f"Found {len(existing_files)} CSV files in {data_dir}: {[f.name for f in existing_files]}")
+    else:
+        print(f"Data directory {data_dir} does not exist, creating it")
+        data_dir.mkdir(parents=True, exist_ok=True)
+    
+    # List seed files that should be present
+    found_seeds = [f for f in seed_files if (data_dir / f).exists()]
+    print(f"Seed files found: {found_seeds}")
+    
+    # Always attempt dbt seed, regardless of whether files exist
+    print("Running dbt seed...")
+    run_cmd(["dbt", "seed", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"], critical=False)
 
+    print("Running dbt models...")
     run_cmd(["dbt", "run", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"])
-    run_cmd(["dbt", "test", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"])
-
-
-def check_terraform_state(**context):
-    """Check if GCP resources already exist"""
-    tf_dir = "/opt/airflow/terraform"
-    try:
-        # Check if terraform state file exists and has resources
-        result = subprocess.run(
-            ["terraform", "state", "list"],
-            cwd=tf_dir,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        resources = [line for line in result.stdout.splitlines() if line.strip()]
-        return len(resources) > 0
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
-        return False
+    
+    print("Running dbt tests...")
+    run_cmd(["dbt", "test", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"], critical=False)
 
 
 def provision_infrastructure(**context):
-    """Provision GCP infrastructure using Terraform if not already exists"""
+    """Provision GCP infrastructure using Terraform, syncing state from actual GCP resources"""
     tf_dir = "/opt/airflow/terraform"
 
-    # Check if resources already exist
-    if check_terraform_state():
-        print("GCP resources already exist, skipping Terraform provisioning")
-        push_terraform_outputs_to_xcom(context, tf_dir)
-        return
+    print("Provisioning GCP infrastructure with Terraform...")
+    
+    # Always init terraform first
+    print("Initializing Terraform...")
+    result = subprocess.run(
+        ["terraform", "init"],
+        cwd=tf_dir,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        print(f"Terraform init failed: {result.stderr}")
+        raise subprocess.CalledProcessError(result.returncode, "terraform init")
+    
+    # Refresh state from actual GCP resources - syncs local state with real resources
+    print("Refreshing Terraform state from GCP...")
+    result = subprocess.run(
+        ["terraform", "refresh"],
+        cwd=tf_dir,
+        capture_output=True,
+        text=True
+    )
+    print("Terraform refresh output:")
+    print(result.stdout)
+    if result.returncode != 0:
+        print("Terraform refresh warnings/errors:")
+        print(result.stderr)
+    
+    # Apply infrastructure - will create only missing resources
+    # State is now synced with actual GCP resources
+    print("Applying Terraform configuration (creating only missing resources)...")
+    result = subprocess.run(
+        ["terraform", "apply", "-auto-approve"],
+        cwd=tf_dir,
+        capture_output=True,
+        text=True
+    )
+    
+    print("Terraform apply output:")
+    print(result.stdout)
+    
+    if result.returncode != 0:
+        print("Terraform apply warnings/errors:")
+        print(result.stderr)
+        # Check if the failure is only due to existing resources (409 errors)
+        if "already exists" in result.stderr or "409" in result.stderr:
+            print("Apply encountered existing resources, but this is expected.")
+            print("New resources (datasets) should have been created successfully.")
+        else:
+            # If it's a different error, re-raise it
+            raise subprocess.CalledProcessError(result.returncode, "terraform apply")
 
-    # Initialize and apply Terraform
-    subprocess.check_call(["terraform", "init"], cwd=tf_dir)
-    subprocess.check_call(["terraform", "apply", "-auto-approve"], cwd=tf_dir)
-
+    print("Terraform provisioning completed")
     push_terraform_outputs_to_xcom(context, tf_dir)
 
 

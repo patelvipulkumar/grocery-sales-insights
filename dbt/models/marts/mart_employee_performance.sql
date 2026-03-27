@@ -1,3 +1,8 @@
+-- High-level logic:
+-- Creates a business-facing employee scorecard mart with performance tiers,
+-- country and company rankings, and revenue contribution metrics for sales
+-- leadership reporting.
+
 {{ config(
     materialized='table',
     description='Employee performance mart with sales metrics, productivity, and tier rankings'

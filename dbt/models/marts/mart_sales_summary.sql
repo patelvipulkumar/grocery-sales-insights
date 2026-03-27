@@ -1,3 +1,8 @@
+-- High-level logic:
+-- Produces business-facing revenue and profit summaries by time, geography,
+-- and product/category, including ranking fields for hot sellers and
+-- category leaders used in BI dashboards.
+
 {{ config(
     materialized='table',
     description='Sales summary mart providing aggregated sales metrics by time, geography, and product'
@@ -5,29 +10,33 @@
 
 with sales_summary as (
     select
-        year,
-        month,
-        day,
-        day_of_week,
-        customer_country,
-        customer_country_code,
-        salesperson_country,
-        category_name,
-        class,
-        price_category,
-        count(distinct sales_id) as transaction_count,
-        sum(quantity) as total_units_sold,
-        sum(total_price) as total_revenue,
-        sum(estimated_profit) as total_profit,
-        avg(total_price) as avg_transaction_value,
-        min(total_price) as min_transaction_value,
-        max(total_price) as max_transaction_value,
-        count(distinct customer_id) as unique_customers,
-        count(distinct product_id) as unique_products,
-        count(distinct salesperson_id) as unique_salespeople,
-        sum(discount) as total_discounts_given
-    from {{ ref('fct_sales_summary') }}
-    group by year, month, day, day_of_week, customer_country, customer_country_code, salesperson_country, category_name, class, price_category
+        ss.year,
+        ss.month,
+        ss.day,
+        ss.day_of_week,
+        ss.customer_country,
+        ss.customer_country_code,
+        ss.salesperson_country,
+        ss.product_id,
+        p.product_name,
+        p.category_name,
+        p.class,
+        p.price_category,
+        count(distinct ss.sales_id) as transaction_count,
+        sum(ss.quantity) as total_units_sold,
+        sum(ss.total_price) as total_revenue,
+        sum(ss.estimated_profit) as total_profit,
+        avg(ss.total_price) as avg_transaction_value,
+        min(ss.total_price) as min_transaction_value,
+        max(ss.total_price) as max_transaction_value,
+        count(distinct ss.customer_id) as unique_customers,
+        count(distinct ss.product_id) as unique_products,
+        count(distinct ss.salesperson_id) as unique_salespeople,
+        sum(ss.discount) as total_discounts_given
+    from {{ ref('fct_sales_summary') }} ss
+    left join {{ ref('st_products') }} p
+        on ss.product_id = p.product_id
+    group by ss.year, ss.month, ss.day, ss.day_of_week, ss.customer_country, ss.customer_country_code, ss.salesperson_country, ss.product_id, p.product_name, p.category_name, p.class, p.price_category
 ),
 
 enriched_summary as (
@@ -52,6 +61,14 @@ enriched_summary as (
         round(total_revenue / nullif(unique_customers, 0), 2) as revenue_per_customer,
         round(total_units_sold / nullif(unique_customers, 0), 2) as units_per_customer,
         round(total_discounts_given / nullif(total_revenue, 0) * 100, 2) as discount_percentage,
+        rank() over (
+            partition by year, month
+            order by total_units_sold desc, total_revenue desc
+        ) as monthly_hot_selling_product_rank,
+        rank() over (
+            partition by year, month, category_name
+            order by total_revenue desc
+        ) as monthly_category_revenue_rank,
         current_timestamp() as dbt_loaded_at
     from sales_summary ss
 )

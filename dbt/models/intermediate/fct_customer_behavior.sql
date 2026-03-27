@@ -1,3 +1,8 @@
+-- High-level logic:
+-- Aggregates customer purchase activity into behavioral facts such as spend,
+-- purchase frequency, recency markers, and engagement signals used by
+-- customer segmentation marts.
+
 {{ config(
     materialized='table',
     description='Customer behavior fact table capturing purchase patterns and engagement metrics'

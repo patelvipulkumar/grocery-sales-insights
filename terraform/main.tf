@@ -1,3 +1,7 @@
+# High-level logic:
+# Provisions core GCP infrastructure for the data platform, including storage,
+# BigQuery datasets, service account permissions, and required secrets.
+
 terraform {
   required_providers {
     google = {
@@ -33,6 +37,11 @@ resource "google_bigquery_dataset" "raw" {
 
 resource "google_bigquery_dataset" "analytics" {
   dataset_id = "grocery_analytics"
+  location   = var.location
+}
+
+resource "google_bigquery_dataset" "staging" {
+  dataset_id = "grocery_staging"
   location   = var.location
 }
 
@@ -86,6 +95,12 @@ resource "google_bigquery_dataset_iam_member" "airflow_raw" {
 
 resource "google_bigquery_dataset_iam_member" "airflow_analytics" {
   dataset_id = google_bigquery_dataset.analytics.dataset_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.airflow.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "airflow_staging" {
+  dataset_id = google_bigquery_dataset.staging.dataset_id
   role       = "roles/bigquery.dataEditor"
   member     = "serviceAccount:${google_service_account.airflow.email}"
 }

@@ -1,3 +1,8 @@
+-- High-level logic:
+-- Builds employee-level performance facts from sales activity, including
+-- transaction volume, customer coverage, revenue contribution, and productivity
+-- metrics for downstream ranking and benchmarking.
+
 {{ config(
     materialized='table',
     description='Employee performance fact table with sales metrics and team productivity'

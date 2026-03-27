@@ -1,3 +1,8 @@
+-- High-level logic:
+-- Builds a transaction-level analytical fact by enriching sales with product,
+-- customer, and employee context; also derives estimated profit for downstream
+-- marts and dashboard KPIs.
+
 {{ config(
     materialized='incremental',
     unique_key='sales_summary_id',
@@ -20,6 +25,7 @@ with sales_data as (
         st.day,
         st.day_of_week,
         -- Join with products for additional product info
+        p.product_name,
         p.category_name,
         p.class,
         p.price_category,
@@ -52,6 +58,7 @@ select
     customer_country,
     customer_country_code,
     product_id,
+    product_name,
     category_name,
     class,
     price_category,
@@ -68,10 +75,9 @@ select
     current_timestamp() as dbt_loaded_at
 from sales_data
 
-{% if execute %}
-    {% if execute %}
-        {% if sql_now in this %}
-        where sales_date >= (select max(sales_date) from {{ this }})
-        {% endif %}
-    {% endif %}
+{% if is_incremental() %}
+where sales_date > (
+    select coalesce(max(sales_date), timestamp('1900-01-01'))
+    from {{ this }}
+)
 {% endif %}

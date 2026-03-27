@@ -1,3 +1,7 @@
+# High-level logic:
+# Runs validation checks for code and data transformations, including lint,
+# dbt compile/test, and Terraform formatting checks.
+
 name: CI
 
 # Uncomment to enable CI on push/PR after end-to-end testing complete

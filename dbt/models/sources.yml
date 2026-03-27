@@ -1,3 +1,7 @@
+# High-level logic:
+# Defines raw source tables and metadata contracts used by dbt models
+# to standardize lineage, documentation, and source-level validation.
+
 version: 2
 
 sources:

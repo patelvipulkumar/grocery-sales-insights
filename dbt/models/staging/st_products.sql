@@ -1,3 +1,7 @@
+-- High-level logic:
+-- Builds a product dimension with category enrichment and pricing buckets to
+-- support product mix, pricing tier, and category performance analysis.
+
 {{ config(
     materialized='table',
     description='Product dimension with category and pricing details'

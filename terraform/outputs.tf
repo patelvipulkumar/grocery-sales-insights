@@ -1,3 +1,7 @@
+# High-level logic:
+# Exposes provisioned resource identifiers so orchestration and deployment
+# steps can consume infrastructure metadata reliably.
+
 output "service_account_email" {
   value = google_service_account.airflow.email
 }

@@ -24,6 +24,7 @@
 - [Quick Start](#-quick-start)
 - [Deployment to GCP](#-deployment-to-gcp)
 - [Airflow DAG Workflow](#-airflow-dag-workflow)
+- [Semantic Layer](#-semantic-layer)
 - [Dashboard](#-dashboard)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
@@ -185,7 +186,7 @@ graph TB
 
 ### 3. **Advanced Analytics** 📊
 - Customer segmentation (RFM Model)
-- Product recommendations (ALS Algorithm)
+- Product recommendations (ALS collaborative filtering)
 - Sales forecasting
 - Geographic analysis
 
@@ -218,8 +219,21 @@ graph TB
 - Git
 - GCP account with service account key (for deployment)
 - Kaggle API token
+- For CI/CD execution: configure GitHub Actions repository secrets (`GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`) and optionally `DOCKER_IMAGE_REPOSITORY` using `GITHUB_SECRETS_SETUP.md`
 
 Note: CI is patch-pinned to Python 3.12.10 in `.github/workflows/ci.yml` for reproducible pipeline behavior.
+
+CI/CD prerequisite note: workflows in `.github/workflows/ci.yml` and `.github/workflows/cd.yml` require GitHub repository secrets to be configured before they can run successfully. Follow `GITHUB_SECRETS_SETUP.md` before enabling or triggering pipelines. CD pushes to `patelvipulkumar/grocerysalesendtoend` by default, and you can override this by setting `DOCKER_IMAGE_REPOSITORY` (for example, your own Docker Hub repo).
+
+### CI/CD Image Repository Scenarios
+
+1. Use project default image repository
+- Do not set `DOCKER_IMAGE_REPOSITORY`.
+- CD pushes images to `patelvipulkumar/grocerysalesendtoend`.
+
+2. Use your own image repository (recommended for forks/enhancements)
+- Set `DOCKER_IMAGE_REPOSITORY` in GitHub Actions secrets to your repo (example: `yourdockerhubuser/grocerysalesendtoend`).
+- CD will push `latest` and commit-SHA tags to your repository instead of the default one.
 
 ### Common Setup Commands
 
@@ -375,18 +389,271 @@ docker-compose up -d
 
 ## 📊 Airflow DAG Workflow
 
-The `grocery_sales_end_to_end` DAG executes sequentially:
+The `grocery_sales_end_to_end` DAG runs in this fixed order:
 
-1. **provision_infrastructure** — Terraform checks/creates GCP resources (conditional)
-2. **download_kaggle** — Downloads dataset from Kaggle using API token
-3. **upload_to_gcs** — Uploads CSV files to Google Cloud Storage
-4. **load_to_bigquery** — Loads raw data into BigQuery `grocery_raw` dataset
-5. **run_dbt** — Executes DBT pipeline:
-    - Seed files are prepared in `dbt/data/` for dbt-managed reference tables
-    - Current implementation may skip dbt commands depending on runtime environment
-6. **run_spark** — Customer segmentation and product recommendations
-    - Runs on Spark standalone first, then retries in local Spark mode if cluster execution fails
-7. **refresh_looker_studio** — Refresh Looker Studio dashboard cache
+`provision_infrastructure` → `download_kaggle` → `upload_to_gcs` → `load_to_bigquery` → `run_dbt` → `run_spark` → `refresh_looker_studio`
+
+Below is the exact logic each task performs.
+
+### 1) `provision_infrastructure`
+
+Purpose: Ensure required GCP infrastructure exists before ingestion starts.
+
+Detailed logic:
+- Runs in `/opt/airflow/terraform`.
+- Executes `terraform init` (hard failure if init fails).
+- Executes `terraform refresh` to sync local state with already-existing resources in GCP.
+- Executes `terraform apply -auto-approve`.
+- If apply fails due to already-existing resources (for example HTTP 409), task logs warning and continues.
+- For other apply failures, task fails.
+- Reads `terraform output -json` and pushes these values to XCom:
+    - `bucket_name`
+    - `bq_raw_dataset`
+    - `bq_analytics_dataset`
+
+Why this matters:
+- The pipeline can run safely even when infra was partially created earlier.
+- Later tasks can consume actual runtime resource names through XCom.
+
+### 2) `download_kaggle`
+
+Purpose: Download source CSV files and prepare dbt seed files.
+
+Detailed logic:
+- Resolves Kaggle credentials in this order:
+    - Environment variables: `KAGGLE_USERNAME` + `KAGGLE_KEY` (or `KAGGLE_API_TOKEN`)
+    - Else `kaggle-api-token` from Secret Manager
+- Supports secret formats:
+    - JSON payload: `{ "username": "...", "key": "..." }`
+    - Plain string token (used as key)
+- Writes credentials to `/tmp/kaggle/kaggle.json` and calls:
+    - `kaggle datasets download -d andrexibiza/grocery-sales-dataset -p /tmp --unzip`
+- Copies reference CSVs from `/tmp` into `/opt/airflow/dbt/data`:
+    - `categories.csv`
+    - `cities.csv`
+    - `countries.csv`
+
+Why this matters:
+- Raw transactional files are downloaded for ingestion.
+- Reference dimension files are staged for dbt seed operations.
+
+### 3) `upload_to_gcs`
+
+Purpose: Upload raw CSV inputs from local temp storage to Cloud Storage.
+
+Detailed logic:
+- Resolves bucket name using priority:
+    - XCom from `provision_infrastructure`
+    - `RAW_BUCKET` environment variable
+    - fallback `grocery-raw`
+- Scans `/tmp/*.csv` and uploads each file to `raw/<filename>` in GCS.
+- Explicitly skips dbt seed files:
+    - `categories.csv`, `cities.csv`, `countries.csv`
+- Uses `LocalFilesystemToGCSOperator` for each uploaded file.
+
+Why this matters:
+- Ensures only raw fact/source files go to raw landing zone.
+- Prevents reference seed tables from being loaded through the wrong ingestion path.
+
+### 4) `load_to_bigquery`
+
+Purpose: Load uploaded raw CSV data into BigQuery raw dataset.
+
+Detailed logic:
+- Resolves bucket with same logic as upload task.
+- Ensures `logical_date` is present in execution context (DAG run, task instance, or UTC fallback).
+- Iterates `/tmp/*.csv` and skips seed files.
+- For each remaining file:
+    - Derives table name from file stem (`-` replaced by `_`)
+    - Loads from `gs://<bucket>/raw/<filename>` to
+        - `<GCP_PROJECT>:grocery_raw.<table_name>`
+    - Uses `GCSToBigQueryOperator` with:
+        - `source_format=CSV`
+        - `skip_leading_rows=1`
+        - `write_disposition=WRITE_TRUNCATE`
+        - `autodetect=True`
+
+Why this matters:
+- Produces a fresh raw dataset snapshot each run.
+- Standardizes table names for downstream dbt models.
+
+### 5) `run_dbt`
+
+Purpose: Build analytics models and run data quality checks.
+
+Detailed logic:
+- Copies dbt project from `/opt/airflow/dbt` to isolated runtime directory `/tmp/dbt_work`.
+- Sets `DBT_PROFILES_DIR=/tmp/dbt_work`.
+- If `packages.yml` exists, runs `dbt deps`.
+- Validates/prints seed file availability under `/tmp/dbt_work/data`.
+- Runs dbt commands in sequence:
+    - `dbt seed --target dev` (non-critical: warnings on failure)
+    - `dbt run --target dev` (critical: fails task on error)
+    - `dbt test --target dev` (non-critical: warnings on failure)
+
+Why this matters:
+- `dbt run` is the required transformation gate.
+- Seed/test failures are visible in logs but do not block full pipeline completion.
+
+### 6) `run_spark`
+
+Purpose: Execute ML/advanced analytics step (segmentation and recommendations).
+
+Detailed logic:
+- Runs `/opt/airflow/spark/segmentation_reco.py` with BigQuery connector package:
+    - `com.google.cloud.spark:spark-bigquery-with-dependencies_2.12:0.34.0`
+- Reads BigQuery raw sales and products data, then writes Spark ML outputs to:
+    - `grocery_analytics.customer_segments` (customer-level segment metrics)
+    - `grocery_analytics.customer_recommendations` (top-N product recommendations per customer)
+- Segmentation computes Spark-based RFM metrics and writes `rfm_score`, `segment_id`, and `segment_name`.
+- Recommendations are generated using Spark MLlib ALS and ranked per customer.
+- If interaction data is too sparse (or ALS fails), the job automatically falls back to a co-purchase heuristic recommender.
+- First attempt: Spark standalone cluster mode (`--master spark://spark-master:7077`).
+- Fallback attempt on failure: local Spark mode (`--master local[2]`).
+- Fails only if both attempts fail.
+
+Why this matters:
+- Cluster-first execution uses distributed resources when available.
+- Local fallback improves reliability in partial/local environments.
+
+### 7) `refresh_looker_studio`
+
+Purpose: Trigger dashboard refresh after warehouse + ML layers are updated.
+
+Detailed logic:
+- Fetches `looker-studio-report-id` from Secret Manager.
+- Fetches Google credentials from Airflow `google_cloud_default` connection.
+- Refreshes credentials if token is expired.
+- Sends POST to:
+    - `https://lookerstudio.google.com/reporting/<report_id>/refresh`
+    - with OAuth bearer token.
+- Handles selected non-actionable API responses as skip instead of hard failure:
+    - `404` / `405`
+    - `500` with error `code=13`
+- Raises for other HTTP errors.
+
+Why this matters:
+- Keeps dashboards close to real-time after each successful pipeline run.
+- Avoids failing entire DAG for known Looker endpoint limitations.
+
+### DAG Runtime Configuration
+
+- Schedule: `@daily`
+- Start date: `2025-01-01`
+- `catchup=False` (no historical backfills by default)
+- `max_active_runs=1` (prevents overlapping runs)
+- Retries: 1 retry per task with 5-minute delay
+- DAG timeout: 4 hours
+
+## 🧠 Semantic Layer
+
+This section defines the analytics-ready semantic layer in BigQuery (schema: `grocery_analytics`) so teams can answer business questions consistently.
+
+### Business Question to Model Mapping
+
+| Business Question | Primary Model | Key Columns |
+|---|---|---|
+| Who are our top customers / most valuable customers? | `customer_lifetime_value` | `total_spent`, `customer_spend_rank`, `customer_value_tier`, `estimated_clv` |
+| Who are our top salespeople / employees? | `mart_employee_performance` | `total_sales_revenue`, `company_rank`, `country_rank`, `performance_tier` |
+| Which regions generate the most revenue? | `mart_sales_summary` | `customer_country`, `salesperson_country`, `total_revenue`, `total_profit` |
+| What are our hot-selling products? | `mart_sales_summary` | `product_id`, `product_name`, `total_units_sold`, `monthly_hot_selling_product_rank` |
+| How can we segment customers for targeted marketing? | `mart_customer_behavior` | `rfm_score`, `rfm_segment`, `marketing_action`, `engagement_status` |
+| What are revenue trends by category? | `mart_sales_summary` | `year`, `month`, `category_name`, `total_revenue`, `monthly_category_revenue_rank` |
+| How can we personalize recommendations? | `mart_recommend` | `customer_id`, `recommended_product`, `recommendation_score`, `recommendation_priority`, `recommendation_type` |
+
+### Canonical Query Examples
+
+Top 10 customers by spend:
+
+```sql
+select
+    customer_id,
+    total_spent,
+    estimated_clv,
+    customer_value_tier,
+    customer_spend_rank
+from `your-project-id.grocery_analytics.customer_lifetime_value`
+order by total_spent desc
+limit 10;
+```
+
+Top 10 salespeople:
+
+```sql
+select
+    employee_id,
+    employee_name,
+    employee_country,
+    total_sales_revenue,
+    company_rank,
+    performance_tier
+from `your-project-id.grocery_analytics.mart_employee_performance`
+order by company_rank
+limit 10;
+```
+
+Monthly revenue trend by product category:
+
+```sql
+select
+    year,
+    month,
+    category_name,
+    sum(total_revenue) as revenue
+from `your-project-id.grocery_analytics.mart_sales_summary`
+group by year, month, category_name
+order by year, month, revenue desc;
+```
+
+Hot-selling products by month:
+
+```sql
+select
+    year,
+    month,
+    product_id,
+    product_name,
+    total_units_sold,
+    monthly_hot_selling_product_rank
+from `your-project-id.grocery_analytics.mart_sales_summary`
+where monthly_hot_selling_product_rank <= 10
+order by year desc, month desc, monthly_hot_selling_product_rank;
+```
+
+Targeted customer campaigns via RFM segments:
+
+```sql
+select
+    customer_id,
+    full_name,
+    rfm_score,
+    rfm_segment,
+    marketing_action,
+    engagement_status
+from `your-project-id.grocery_analytics.mart_customer_behavior`
+order by rfm_segment, rfm_score desc;
+```
+
+Personalized recommendations for a customer:
+
+```sql
+select
+    customer_id,
+    recommended_product,
+    recommended_product_name,
+    recommendation_score,
+    recommendation_priority,
+    recommendation_type,
+    price_movement
+from `your-project-id.grocery_analytics.mart_recommend`
+where customer_id = 123
+order by recommendation_rank;
+```
+
+Notes:
+- Use `mart_sales_summary` for aggregated trends and product/region analytics.
+- Use `customer_lifetime_value` and `mart_customer_behavior` together for customer value + segmentation strategy.
+- Use `mart_recommend` for recommendation serving and campaign personalization.
 
 ## 📁 Project Structure
 
@@ -477,6 +744,10 @@ flake8 airflow/dags/
 5. Share report ID with team (used in Terraform variables)
 6. Airflow automatically refreshes the dashboard after each pipeline run
 
+Detailed 5-page build guide is kept in a local-only file to avoid pushing it to GitHub:
+
+- `LOOKER_STUDIO_5_PAGE.local.md`
+
 ## 🐛 Troubleshooting
 
 If you see missing environment variable warnings (for example `GCP_PROJECT` or `RAW_BUCKET`), run `cp .env.example .env` and update values in `.env`.
@@ -511,6 +782,31 @@ sudo usermod -aG docker $USER
 newgrp docker
 docker-compose up
 ```
+
+### CI/CD Pipeline Fails (GitHub Actions)
+
+1. Failure: missing secret message in CD logs
+- Cause: one or more required secrets are not configured.
+- Fix: add `GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` in GitHub repository secrets.
+- Reference: `GITHUB_SECRETS_SETUP.md`.
+
+2. Failure: Docker login unauthorized
+- Cause: invalid Docker Hub username/token pair.
+- Fix: regenerate a Docker Hub personal access token and update `DOCKERHUB_TOKEN`.
+- Verify `DOCKERHUB_USERNAME` exactly matches the Docker Hub account that owns the target repository.
+
+3. Failure: `denied: requested access to the resource is denied` on docker push
+- Cause: pushing to a repository your account cannot write to.
+- Fix option A: push to project default `patelvipulkumar/grocerysalesendtoend` only if your account has write access.
+- Fix option B (recommended for forks): set optional secret `DOCKER_IMAGE_REPOSITORY` to your own repo, for example `yourdockerhubuser/grocerysalesendtoend`.
+
+4. Failure: CI/CD runs but image appears in unexpected repo
+- Cause: `DOCKER_IMAGE_REPOSITORY` is set and overrides default image target.
+- Fix: remove or update `DOCKER_IMAGE_REPOSITORY` to desired target.
+
+5. Failure: workflow does not trigger automatically
+- Cause: workflows are currently configured for manual dispatch only.
+- Fix: uncomment `on:` push/PR triggers in `.github/workflows/ci.yml` and `.github/workflows/cd.yml` when ready.
 
 ## 📚 Documentation
 
