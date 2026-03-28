@@ -21,6 +21,7 @@ Thumbs.db
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
+terraform.tfvars
 .terraform/terraform.tfvars
 
 # Google Cloud credentials
@@ -50,6 +51,3 @@ Icon?
 
 # Ignore all secret files
 *secret*
-
-# Local-only dashboard build guide
-LOOKER_STUDIO_5_PAGE.local.md
