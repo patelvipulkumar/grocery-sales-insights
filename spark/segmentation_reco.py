@@ -50,10 +50,16 @@ def drop_bq_table_if_exists(dataset_name, table_name):
 
 
 def materialize_dataframe(dataframe, label):
-    cached_dataframe = dataframe.cache()
-    row_count = cached_dataframe.count()
-    print(f"Materialized {label} in Spark cache with {row_count} rows")
-    return cached_dataframe
+    """Attempt to materialize and cache dataframe; gracefully handle OOM/executor failures."""
+    try:
+        cached_dataframe = dataframe.cache()
+        row_count = cached_dataframe.count()
+        print(f"Materialized {label} in Spark cache with {row_count} rows")
+        return cached_dataframe
+    except Exception as exc:
+        print(f"WARNING: Failed to materialize {label}; using lazy evaluation instead. Error: {exc}")
+        print(f"  This may impact performance but allows job to proceed with limited cluster memory.")
+        return dataframe
 
 
 spark = SparkSession.builder.appName("grocery-segmentation-reco").getOrCreate()
@@ -88,18 +94,53 @@ except Exception as exc:
         .limit(MAX_ROWS)
     )
 
-products_df = materialize_dataframe(
-    spark.read.format("bigquery")
-    .option("table", f"{PROJECT}:{RAW_DATASET}.products")
-    .load()
-    .select(
+# Load products with error handling
+try:
+    products_base = spark.read.format("bigquery").option("table", f"{PROJECT}:{RAW_DATASET}.products").load().select(
         col("ProductID").cast("int").alias("product_id"),
         col("ProductName").alias("product_name"),
-        col("CategoryID").alias("category_id"),
+        col("CategoryID").cast("int").alias("category_id"),
         col("Price").cast("double").alias("product_price"),
-    ),
-    "products source",
-)
+    )
+    
+    categories = spark.read.format("bigquery").option("table", f"{PROJECT}:{RAW_DATASET}.categories").load().select(
+        col("CategoryID").cast("int").alias("category_id"),
+        col("CategoryName").alias("category_name"),
+    )
+    
+    products_df = materialize_dataframe(
+        products_base.join(categories, on="category_id", how="left"),
+        "products source",
+    )
+    print("Successfully loaded products and categories")
+except Exception as exc:
+    print(f"ERROR: Failed to load products/categories: {exc}")
+    print("  Products dataframe will be empty; recommendations cannot be generated.")
+    products_df = spark.createDataFrame([], "product_id INT, product_name STRING, category_id INT, product_price DOUBLE, category_name STRING")
+
+# Load customers with error handling
+try:
+    customers_df = materialize_dataframe(
+        spark.read.format("bigquery")
+        .option("table", f"{PROJECT}:{RAW_DATASET}.customers")
+        .load()
+        .select(
+            col("CustomerID").cast("int").alias("customer_id"),
+            expr("trim(concat(coalesce(FirstName, ''), ' ', coalesce(LastName, '')))").alias("customer_name"),
+        ),
+        "customers source",
+    )
+    print("Successfully loaded customers")
+except Exception as exc:
+    print(f"ERROR: Failed to load customers: {exc}")
+    print("  Customers dataframe will be empty; customer names will be missing from recommendations.")
+    customers_df = spark.createDataFrame([], "customer_id INT, customer_name STRING")
+
+# Proceed only if we have data to work with
+if products_df.count() == 0:
+    print("FATAL: Products dataframe is empty; cannot proceed with recommendations. Exiting.")
+    spark.stop()
+    exit(1)
 
 sales_df = (
     sales_df.withColumn("SalesDate", col("SalesDate").cast("timestamp"))
@@ -124,6 +165,7 @@ sales_df = materialize_dataframe(
     .na.drop(subset=["SalesDate", "CustomerID", "ProductID", "Quantity", "TotalPrice", "TransactionNumber"]),
     "sales source",
 )
+
 
 # ------------------------------------------------------------------------------
 # Legacy heuristic logic (kept commented for learning/reference)
@@ -210,7 +252,7 @@ def build_rfm_segments(input_sales_df):
     return rfm_scored
 
 
-def build_als_recommendations(input_sales_df, input_products_df):
+def build_als_recommendations(input_sales_df, input_products_df, input_customers_df):
     interactions = input_sales_df.select(
         col("CustomerID").cast("int").alias("customer_id"),
         col("ProductID").cast("int").alias("product_id"),
@@ -262,15 +304,18 @@ def build_als_recommendations(input_sales_df, input_products_df):
         candidate_recommendations.withColumn("recommendation_rank", row_number().over(reco_rank_window))
         .filter(col("recommendation_rank") <= TOP_N_RECOMMENDATIONS)
         .join(input_products_df, on="product_id", how="left")
+        .join(input_customers_df, on="customer_id", how="left")
         .withColumn("model_type", lit("ALS"))
         .withColumn("model_generated_at", current_timestamp())
     )
 
     return ranked_recommendations.select(
         "customer_id",
+        "customer_name",
         "product_id",
         "product_name",
         "category_id",
+        "category_name",
         "score",
         "recommendation_rank",
         "model_type",
@@ -278,7 +323,7 @@ def build_als_recommendations(input_sales_df, input_products_df):
     )
 
 
-def build_heuristic_recommendations(input_sales_df, input_products_df):
+def build_heuristic_recommendations(input_sales_df, input_products_df, input_customers_df):
     interactions = input_sales_df.select(
         col("CustomerID").cast("int").alias("customer_id"),
         col("ProductID").cast("int").alias("product_id"),
@@ -321,15 +366,18 @@ def build_heuristic_recommendations(input_sales_df, input_products_df):
         filtered.withColumn("recommendation_rank", row_number().over(ranked_window))
         .filter(col("recommendation_rank") <= TOP_N_RECOMMENDATIONS)
         .join(input_products_df, on="product_id", how="left")
+        .join(input_customers_df, on="customer_id", how="left")
         .withColumn("model_type", lit("HEURISTIC_FALLBACK"))
         .withColumn("model_generated_at", current_timestamp())
     )
 
     return ranked.select(
         "customer_id",
+        "customer_name",
         "product_id",
         "product_name",
         "category_id",
+        "category_name",
         "score",
         "recommendation_rank",
         "model_type",
@@ -337,7 +385,7 @@ def build_heuristic_recommendations(input_sales_df, input_products_df):
     )
 
 
-def build_recommendations_with_fallback(input_sales_df, input_products_df):
+def build_recommendations_with_fallback(input_sales_df, input_products_df, input_customers_df):
     interactions = input_sales_df.select(
         col("CustomerID").cast("int").alias("customer_id"),
         col("ProductID").cast("int").alias("product_id"),
@@ -359,22 +407,22 @@ def build_recommendations_with_fallback(input_sales_df, input_products_df):
             "ALS fallback triggered due to sparse data: "
             f"users={user_count}, items={item_count}, interactions={interaction_count}"
         )
-        return build_heuristic_recommendations(input_sales_df, input_products_df)
+        return build_heuristic_recommendations(input_sales_df, input_products_df, input_customers_df)
 
     try:
         print(
             "Running ALS recommender with data profile: "
             f"users={user_count}, items={item_count}, interactions={interaction_count}"
         )
-        als_recommendations = build_als_recommendations(input_sales_df, input_products_df)
+        als_recommendations = build_als_recommendations(input_sales_df, input_products_df, input_customers_df)
         if als_recommendations.limit(1).count() == 0:
             print("ALS produced zero candidate recommendations after filtering; switching to heuristic fallback")
-            return build_heuristic_recommendations(input_sales_df, input_products_df)
+            return build_heuristic_recommendations(input_sales_df, input_products_df, input_customers_df)
 
         return als_recommendations
     except Exception as exc:
         print(f"ALS training/inference failed, switching to heuristic fallback. Error: {exc}")
-        return build_heuristic_recommendations(input_sales_df, input_products_df)
+        return build_heuristic_recommendations(input_sales_df, input_products_df, input_customers_df)
 
 
 segments_df = build_rfm_segments(sales_df)
@@ -382,7 +430,7 @@ target_segments = f"{PROJECT}:{ANALYTICS_DATASET}.customer_segments"
 drop_bq_table_if_exists(ANALYTICS_DATASET, "customer_segments")
 segments_df.write.format("bigquery").option("table", target_segments).option("writeMethod", "direct").mode("overwrite").save()
 
-recommendations_df = build_recommendations_with_fallback(sales_df, products_df)
+recommendations_df = build_recommendations_with_fallback(sales_df, products_df, customers_df)
 target_reco = f"{PROJECT}:{ANALYTICS_DATASET}.customer_recommendations"
 drop_bq_table_if_exists(ANALYTICS_DATASET, "customer_recommendations")
 recommendations_df.write.format("bigquery").option("table", target_reco).option("writeMethod", "direct").mode("overwrite").save()

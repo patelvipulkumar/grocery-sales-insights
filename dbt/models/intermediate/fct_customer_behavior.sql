@@ -25,6 +25,12 @@ with customer_purchases as (
     group by st.customer_id
 ),
 
+dataset_anchor as (
+    select
+        max(date(st.sales_date)) as data_as_of_date
+    from {{ ref('st_sales') }} st
+),
+
 behavior_metrics as (
     select
         {{ dbt_utils.generate_surrogate_key(['customer_id']) }} as customer_behavior_id,
@@ -39,18 +45,20 @@ behavior_metrics as (
         days_between_first_last_purchase,
         total_discount_received,
         avg_discount_per_transaction,
+        da.data_as_of_date,
         case
             when purchase_count >= 50 then 'High Value'
             when purchase_count >= 20 then 'Medium Value'
             else 'Low Value'
         end as customer_value_segment,
         case
-            when date_diff(current_date(), date(last_purchase_date), day) <= 30 then 'Active'
-            when date_diff(current_date(), date(last_purchase_date), day) <= 90 then 'At Risk'
+            when date_diff(da.data_as_of_date, date(last_purchase_date), day) <= 30 then 'Active'
+            when date_diff(da.data_as_of_date, date(last_purchase_date), day) <= 90 then 'At Risk'
             else 'Dormant'
         end as engagement_status,
         current_timestamp() as dbt_loaded_at
     from customer_purchases
+    cross join dataset_anchor da
 )
 
 select *

@@ -24,6 +24,7 @@
 - [Quick Start](#-quick-start)
 - [Deployment to GCP](#-deployment-to-gcp)
 - [Airflow DAG Workflow](#-airflow-dag-workflow)
+- [Known Data Quality Guardrails](#known-data-quality-guardrails)
 - [Semantic Layer](#-semantic-layer)
 - [Dashboard](#-dashboard)
 - [Troubleshooting](#-troubleshooting)
@@ -486,6 +487,11 @@ Detailed logic:
 - Sets `DBT_PROFILES_DIR=/tmp/dbt_work`.
 - If `packages.yml` exists, runs `dbt deps`.
 - Validates/prints seed file availability under `/tmp/dbt_work/data`.
+- Normalizes geography seed data in runtime before `dbt seed`:
+    - During testing, we observed malformed geography references in source seeds (for example: city-country links collapsing to one country and incorrect country codes), which caused misleading `customer_country` / `country_code` analytics.
+    - Airflow now auto-corrects `countries.csv` and `cities.csv` inside `/tmp/dbt_work/data` by resolving city -> country using offline lookup and standardizing country codes to ISO alpha-2.
+    - Missing country rows needed by resolved cities are added to the runtime `countries.csv` copy.
+    - This correction is runtime-only and does not permanently overwrite repository seed files.
 - Runs dbt commands in sequence:
     - `dbt seed --target dev` (non-critical: warnings on failure)
     - `dbt run --target dev` (critical: fails task on error)
@@ -544,6 +550,29 @@ Why this matters:
 - `max_active_runs=1` (prevents overlapping runs)
 - Retries: 1 retry per task with 5-minute delay
 - DAG timeout: 4 hours
+
+## Known Data Quality Guardrails
+
+### Geography seed normalization (cities/countries)
+
+Issue observed during testing:
+- Source seed references can contain inconsistent geography mappings (for example, many cities linked to the same country ID and incorrect country codes), which distorts `customer_country` and `customer_country_code` metrics.
+
+Runtime protection in Airflow:
+- Before `dbt seed`, task `run_dbt` normalizes `/tmp/dbt_work/data/countries.csv` and `/tmp/dbt_work/data/cities.csv`.
+- Country codes are standardized to ISO alpha-2.
+- City names are resolved to country codes using an offline lookup and mapped to the correct `CountryID`.
+- If a resolved country code is missing from `countries.csv`, a runtime row is added and used for city mapping.
+- Normalization is applied only to runtime copies under `/tmp/dbt_work/data` and does not permanently overwrite repository seed files.
+
+Why this guardrail exists:
+- Keeps reporting dimensions stable for dashboards and marts that depend on `customer_country` and `country_code`.
+- Reduces manual seed cleanup work while preserving reproducible pipeline behavior.
+
+Quick validation after a DAG run:
+- Check Airflow task logs for `Geography seed normalization complete` summary counters.
+- Validate that `customer_country_code` values in analytics tables are ISO-like (for example `US`, `CA`, `DE`) and not malformed values.
+- Confirm country distributions in Looker Studio are no longer collapsed unexpectedly.
 
 ## 🧠 Semantic Layer
 

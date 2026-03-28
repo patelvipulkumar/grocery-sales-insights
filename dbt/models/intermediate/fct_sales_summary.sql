@@ -74,10 +74,3 @@ select
     day_of_week,
     current_timestamp() as dbt_loaded_at
 from sales_data
-
-{% if is_incremental() %}
-where sales_date > (
-    select coalesce(max(sales_date), timestamp('1900-01-01'))
-    from {{ this }}
-)
-{% endif %}

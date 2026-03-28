@@ -41,8 +41,6 @@ Charts and widgets:
 1. Scorecards
    - Total Revenue: SUM(total_revenue)
    - Total Profit: SUM(total_profit)
-   - Transactions: SUM(transaction_count)
-   - Unique Customers: SUM(unique_customers)
 2. Time series
    - Dimension: year_month
    - Metric: SUM(total_revenue)
@@ -130,14 +128,14 @@ Data source: grocery_analytics.customer_recommendations
 
 Charts and widgets:
 1. Recommendations table
-   - Dimensions: customer_id, recommendation_rank, product_name, category_id
+   - Dimensions: customer_id, customer_name, recommendation_rank, product_name, category_name
    - Metrics: score
    - Sort: score descending
 2. Customer filter control
    - Input/drop-down: customer_id
 3. Rank-1 activation table
    - Filter: recommendation_rank = 1
-   - Columns: customer_id, product_name, score, category_id
+   - Columns: customer_id, customer_name, product_name, category_name, score
 
 ## Page 6: Spark ML Insights
 
@@ -173,11 +171,11 @@ Charts:
    - ALS Coverage %: SUM(CASE WHEN model_type = "ALS" THEN 1 ELSE 0 END) / COUNT(product_id)
    - Fallback Coverage %: SUM(CASE WHEN model_type = "HEURISTIC_FALLBACK" THEN 1 ELSE 0 END) / COUNT(product_id)
 2. Top recommended products table
-   - Dimensions: product_name, category_id
+   - Dimensions: product_name, category_name
    - Metrics: COUNT(product_id), AVG(score)
    - Sort: COUNT(product_id) descending
 3. Customer recommendation explorer table
-   - Dimensions: customer_id, recommendation_rank, product_name, model_type
+   - Dimensions: customer_id, customer_name, recommendation_rank, product_name, category_name, model_type
    - Metrics: score
    - Sort: customer_id ascending, recommendation_rank ascending
 
@@ -220,9 +218,11 @@ Use this quick reference when configuring Looker Studio field types and default 
 | Column | Expected Type | Suggested Looker Role | Default Aggregation |
 |---|---|---|---|
 | customer_id | Number (Integer) | Dimension | None |
+| customer_name | Text | Dimension | None |
 | product_id | Number (Integer) | Dimension | None |
 | product_name | Text | Dimension | None |
 | category_id | Number (Integer) | Dimension | None |
+| category_name | Text | Dimension | None |
 | score | Number | Metric | AVG |
 | recommendation_rank | Number (Integer) | Dimension | None |
 | model_type | Text | Dimension | None |

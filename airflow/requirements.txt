@@ -9,3 +9,5 @@ dbt-bigquery==1.8.0
 pyspark==3.3.0
 pandas==2.1.4
 requests>=2.32.3
+geonamescache==2.0.0
+pycountry==24.6.1

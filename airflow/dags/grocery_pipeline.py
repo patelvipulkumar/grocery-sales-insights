@@ -19,6 +19,8 @@ import subprocess
 import json
 import pathlib
 import shutil
+import csv
+import re
 import requests
 from google.auth.transport.requests import Request
 
@@ -178,6 +180,177 @@ def load_to_bigquery(**context):
         operator.execute(context=operator_context)
 
 
+def _normalize_city_name(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9 ]+", "", (value or "").strip().lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _normalize_country_name(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9 ]+", "", (value or "").strip().lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _country_code_from_name(country_name: str, pycountry_module) -> str | None:
+    if not country_name:
+        return None
+
+    aliases = {
+        "czech republic": "Czechia",
+        "macedonia": "North Macedonia",
+        "swaziland": "Eswatini",
+        "vatican city": "Holy See (Vatican City State)",
+    }
+    lookup_name = aliases.get(_normalize_country_name(country_name), country_name)
+
+    try:
+        return pycountry_module.countries.lookup(lookup_name).alpha_2
+    except LookupError:
+        try:
+            result = pycountry_module.countries.search_fuzzy(lookup_name)
+            if result:
+                return result[0].alpha_2
+        except LookupError:
+            return None
+    return None
+
+
+def _build_city_to_country_code_lookup() -> dict[str, str]:
+    import geonamescache
+
+    gc = geonamescache.GeonamesCache()
+    city_records = gc.get_cities().values()
+    lookup: dict[str, tuple[str, int]] = {}
+
+    for city in city_records:
+        city_name = _normalize_city_name(city.get("name", ""))
+        country_code = (city.get("countrycode") or "").strip().upper()
+        if not city_name or not country_code:
+            continue
+        population = int(city.get("population") or 0)
+        current = lookup.get(city_name)
+        if current is None or population > current[1]:
+            lookup[city_name] = (country_code, population)
+
+    return {city_name: payload[0] for city_name, payload in lookup.items()}
+
+
+def normalize_geography_seeds(dbt_workdir: pathlib.Path) -> None:
+    """Normalize geography seed data in runtime workspace before dbt seed."""
+    data_dir = dbt_workdir / "data"
+    countries_path = data_dir / "countries.csv"
+    cities_path = data_dir / "cities.csv"
+
+    if not countries_path.exists() or not cities_path.exists():
+        print("Skipping geography normalization: countries.csv or cities.csv is missing")
+        return
+
+    with countries_path.open("r", newline="", encoding="utf-8") as fp:
+        countries_reader = csv.DictReader(fp)
+        countries_fieldnames = countries_reader.fieldnames
+        countries_rows = list(countries_reader)
+
+    if not countries_fieldnames:
+        print("Skipping geography normalization: countries.csv has no headers")
+        return
+
+    try:
+        import pycountry
+    except ImportError:
+        print("Skipping geography normalization: pycountry is not installed")
+        return
+
+    try:
+        city_to_country_code = _build_city_to_country_code_lookup()
+    except ImportError:
+        print("Skipping geography normalization: geonamescache is not installed")
+        return
+
+    countries_updated = 0
+    country_id_by_code: dict[str, str] = {}
+    for row in countries_rows:
+        current_code = (row.get("CountryCode") or "").strip().upper()
+        resolved_code = _country_code_from_name((row.get("CountryName") or "").strip(), pycountry)
+        if resolved_code and resolved_code != current_code:
+            row["CountryCode"] = resolved_code
+            current_code = resolved_code
+            countries_updated += 1
+        if current_code:
+            country_id_by_code[current_code] = (row.get("CountryID") or "").strip()
+
+    with countries_path.open("w", newline="", encoding="utf-8") as fp:
+        writer = csv.DictWriter(fp, fieldnames=countries_fieldnames)
+        writer.writeheader()
+        writer.writerows(countries_rows)
+
+    with cities_path.open("r", newline="", encoding="utf-8") as fp:
+        cities_reader = csv.DictReader(fp)
+        cities_fieldnames = cities_reader.fieldnames
+        cities_rows = list(cities_reader)
+
+    if not cities_fieldnames:
+        print("Skipping geography normalization: cities.csv has no headers")
+        return
+
+    existing_ids = []
+    for row in countries_rows:
+        try:
+            existing_ids.append(int((row.get("CountryID") or "").strip()))
+        except ValueError:
+            continue
+    next_country_id = max(existing_ids, default=0) + 1
+
+    created_countries = 0
+    cities_updated = 0
+    unresolved_cities = 0
+    for row in cities_rows:
+        city_name = (row.get("CityName") or "").strip()
+        normalized_city_name = _normalize_city_name(city_name)
+        country_code = city_to_country_code.get(normalized_city_name)
+        if not country_code:
+            unresolved_cities += 1
+            continue
+
+        target_country_id = country_id_by_code.get(country_code)
+        if not target_country_id:
+            country = pycountry.countries.get(alpha_2=country_code)
+            if not country:
+                unresolved_cities += 1
+                continue
+
+            target_country_id = str(next_country_id)
+            next_country_id += 1
+            countries_rows.append(
+                {
+                    "CountryID": target_country_id,
+                    "CountryName": country.name,
+                    "CountryCode": country_code,
+                }
+            )
+            country_id_by_code[country_code] = target_country_id
+            created_countries += 1
+
+        if (row.get("CountryID") or "").strip() != target_country_id:
+            row["CountryID"] = target_country_id
+            cities_updated += 1
+
+    if created_countries > 0:
+        with countries_path.open("w", newline="", encoding="utf-8") as fp:
+            writer = csv.DictWriter(fp, fieldnames=countries_fieldnames)
+            writer.writeheader()
+            writer.writerows(countries_rows)
+
+    with cities_path.open("w", newline="", encoding="utf-8") as fp:
+        writer = csv.DictWriter(fp, fieldnames=cities_fieldnames)
+        writer.writeheader()
+        writer.writerows(cities_rows)
+
+    print(
+        "Geography seed normalization complete: "
+        f"countries_updated={countries_updated}, created_countries={created_countries}, "
+        f"cities_updated={cities_updated}, unresolved_cities={unresolved_cities}"
+    )
+
+
 def run_dbt(**context):
     dbt_source = pathlib.Path("/opt/airflow/dbt")
     dbt_workdir = pathlib.Path("/tmp/dbt_work")
@@ -219,14 +392,16 @@ def run_dbt(**context):
     # List seed files that should be present
     found_seeds = [f for f in seed_files if (data_dir / f).exists()]
     print(f"Seed files found: {found_seeds}")
+
+    normalize_geography_seeds(dbt_workdir)
     
     # Always attempt dbt seed, regardless of whether files exist
     print("Running dbt seed...")
-    run_cmd(["dbt", "seed", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"], critical=False)
+    run_cmd(["dbt", "seed", "--full-refresh", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"], critical=False)
 
-    print("Running dbt models...")
-    run_cmd(["dbt", "run", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"])
-    
+    print("Running dbt models with full refresh...")
+    run_cmd(["dbt", "run", "--full-refresh", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"])
+
     print("Running dbt tests...")
     run_cmd(["dbt", "test", "--profiles-dir", str(dbt_workdir), "--project-dir", str(dbt_workdir), "--target", "dev"], critical=False)
 
