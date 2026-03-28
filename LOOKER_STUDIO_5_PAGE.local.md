@@ -1,33 +1,6 @@
 # Looker Studio Complete 5-Page Build (Local-Only)
 
-This local guide is intentionally excluded from git so you can keep working notes and dashboard build details private.
-
 Estimated effort for first build: 90-150 minutes.
-
-## Commenting Convention (Project-Wide)
-
-Use these high-level header comments at the top of files for consistency.
-
-1. Python files (`.py`)
-   - Use a module docstring (`""" ... """`) with 3-5 bullets.
-   - Describe pipeline intent, major steps, and output targets.
-
-2. dbt SQL files (`.sql`)
-   - Add 3 comment lines before `{{ config(...) }}`.
-   - Focus on business intent + transformation purpose (not line-by-line SQL behavior).
-
-3. Terraform files (`.tf`)
-   - Add 2-3 comment lines at file top.
-   - Explain what resources/inputs/outputs the file governs.
-
-4. YAML files (`.yml`)
-   - Add 2-3 comment lines at file top.
-   - Summarize what the workflow/config controls.
-
-Header style template:
-- Start with `High-level logic:`
-- Keep concise and implementation-aware.
-- Mention the primary output table/resource when relevant.
 
 ## Global Setup (Do Once)
 

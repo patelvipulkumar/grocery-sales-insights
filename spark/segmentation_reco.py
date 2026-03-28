@@ -1,6 +1,6 @@
 """
 High-level pipeline overview:
-1) Build Spark-based RFM segments from raw sales activity.
+1) Build Spark-based RFM segments from dbt-corrected sales activity.
 2) Generate top-N personalized recommendations with ALS.
 3) Automatically fall back to heuristic co-purchase recommendations when
     ALS cannot run reliably (sparse data or runtime failure).
@@ -9,6 +9,7 @@ High-level pipeline overview:
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
+    coalesce,
     col,
     concat,
     current_timestamp,
@@ -27,8 +28,10 @@ import os
 
 PROJECT = os.getenv("GCP_PROJECT", "your-project-id")
 RAW_DATASET = "grocery_raw"
+STAGING_DATASET = "grocery_staging"
 ANALYTICS_DATASET = "grocery_analytics"
 RAW_TABLE = "sales"
+CURATED_SALES_TABLE = "st_sales"
 MAX_ROWS = int(os.getenv("SPARK_MAX_ROWS", "200000"))
 TOP_N_RECOMMENDATIONS = int(os.getenv("SPARK_TOP_N_RECOMMENDATIONS", "10"))
 ALS_RANK = int(os.getenv("SPARK_ALS_RANK", "20"))
@@ -45,16 +48,47 @@ def drop_bq_table_if_exists(dataset_name, table_name):
     client.delete_table(table_id, not_found_ok=True)
     print(f"Prepared target table for overwrite: {table_id}")
 
+
+def materialize_dataframe(dataframe, label):
+    cached_dataframe = dataframe.cache()
+    row_count = cached_dataframe.count()
+    print(f"Materialized {label} in Spark cache with {row_count} rows")
+    return cached_dataframe
+
+
 spark = SparkSession.builder.appName("grocery-segmentation-reco").getOrCreate()
 
-sales_df = (
-    spark.read.format("bigquery")
-    .option("table", f"{PROJECT}:{RAW_DATASET}.{RAW_TABLE}")
-    .load()
-    .limit(MAX_ROWS)
-)
+try:
+    # Prefer dbt-corrected sales values from st_sales.
+    sales_df = (
+        spark.read.format("bigquery")
+        .option("table", f"{PROJECT}:{STAGING_DATASET}.{CURATED_SALES_TABLE}")
+        .load()
+        .select(
+            col("sales_date").cast("timestamp").alias("SalesDate"),
+            col("customer_id").cast("int").alias("CustomerID"),
+            col("product_id").cast("int").alias("ProductID"),
+            col("total_price").cast("double").alias("TotalPrice"),
+            col("quantity").cast("double").alias("Quantity"),
+            col("discount").cast("double").alias("Discount"),
+            col("transaction_number").alias("TransactionNumber"),
+        )
+        .limit(MAX_ROWS)
+    )
+    print(f"Using curated sales source: {PROJECT}:{STAGING_DATASET}.{CURATED_SALES_TABLE}")
+except Exception as exc:
+    print(
+        "Curated sales source unavailable; falling back to raw sales. "
+        f"Error: {exc}"
+    )
+    sales_df = (
+        spark.read.format("bigquery")
+        .option("table", f"{PROJECT}:{RAW_DATASET}.{RAW_TABLE}")
+        .load()
+        .limit(MAX_ROWS)
+    )
 
-products_df = (
+products_df = materialize_dataframe(
     spark.read.format("bigquery")
     .option("table", f"{PROJECT}:{RAW_DATASET}.products")
     .load()
@@ -62,7 +96,9 @@ products_df = (
         col("ProductID").cast("int").alias("product_id"),
         col("ProductName").alias("product_name"),
         col("CategoryID").alias("category_id"),
-    )
+        col("Price").cast("double").alias("product_price"),
+    ),
+    "products source",
 )
 
 sales_df = (
@@ -71,7 +107,22 @@ sales_df = (
     .withColumn("ProductID", col("ProductID").cast("int"))
     .withColumn("TotalPrice", col("TotalPrice").cast("double"))
     .withColumn("Quantity", col("Quantity").cast("double"))
-    .na.drop(subset=["SalesDate", "CustomerID", "ProductID", "TotalPrice", "TransactionNumber"])
+    .withColumn("Discount", col("Discount").cast("double"))
+)
+
+sales_df = materialize_dataframe(
+    sales_df.join(products_df.select("product_id", "product_price"), sales_df.ProductID == col("product_id"), "left")
+    .withColumn(
+        "TotalPrice",
+        when(
+            col("TotalPrice").isNull() | (col("TotalPrice") <= 0),
+            (coalesce(col("Quantity"), lit(0.0)) * coalesce(col("product_price"), lit(0.0))) - coalesce(col("Discount"), lit(0.0)),
+        ).otherwise(col("TotalPrice")),
+    )
+    .withColumn("TotalPrice", when(col("TotalPrice") < 0, lit(0.0)).otherwise(col("TotalPrice")))
+    .drop("product_id", "product_price")
+    .na.drop(subset=["SalesDate", "CustomerID", "ProductID", "Quantity", "TotalPrice", "TransactionNumber"]),
+    "sales source",
 )
 
 # ------------------------------------------------------------------------------
@@ -163,11 +214,14 @@ def build_als_recommendations(input_sales_df, input_products_df):
     interactions = input_sales_df.select(
         col("CustomerID").cast("int").alias("customer_id"),
         col("ProductID").cast("int").alias("product_id"),
+        col("Quantity").cast("double").alias("quantity"),
         col("TotalPrice").cast("double").alias("total_price"),
     )
 
     ratings = interactions.groupBy("customer_id", "product_id").agg(
-        spark_sum("total_price").alias("raw_rating")
+        spark_sum(
+            when(col("total_price") > 0, col("total_price")).otherwise(coalesce(col("quantity"), lit(0.0)))
+        ).alias("raw_rating")
     )
 
     ratings = ratings.withColumn("rating", expr("log(1 + raw_rating)"))
@@ -312,7 +366,12 @@ def build_recommendations_with_fallback(input_sales_df, input_products_df):
             "Running ALS recommender with data profile: "
             f"users={user_count}, items={item_count}, interactions={interaction_count}"
         )
-        return build_als_recommendations(input_sales_df, input_products_df)
+        als_recommendations = build_als_recommendations(input_sales_df, input_products_df)
+        if als_recommendations.limit(1).count() == 0:
+            print("ALS produced zero candidate recommendations after filtering; switching to heuristic fallback")
+            return build_heuristic_recommendations(input_sales_df, input_products_df)
+
+        return als_recommendations
     except Exception as exc:
         print(f"ALS training/inference failed, switching to heuristic fallback. Error: {exc}")
         return build_heuristic_recommendations(input_sales_df, input_products_df)
