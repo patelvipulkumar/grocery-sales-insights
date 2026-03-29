@@ -26,7 +26,7 @@ This guide walks you through configuring GitHub repository secrets needed for CI
 
 #### Add Secret #1: `GCP_PROJECT_ID`
 - **Name**: `GCP_PROJECT_ID`
-- **Value**: Your GCP project ID (e.g., `project-ba995651-8202-4620-8c2`)
+- **Value**: Your GCP project ID (e.g., `Your Project ID`)
 - Click **Add secret**
 
 #### Add Secret #2: `GCP_SA_KEY`
@@ -48,20 +48,63 @@ This guide walks you through configuring GitHub repository secrets needed for CI
   - Use token value (not your account password)
 - Click **Add secret**
 
-#### Optional Secret #5: `DOCKER_IMAGE_REPOSITORY`
+#### Add Secret #5: `GCP_REGION`
+- **Name**: `GCP_REGION`
+- **Value**: GCP region/zone for your infrastructure (e.g., `us-west1-a`)
+- Click **Add secret**
+
+#### Add Secret #6: `KAGGLE_API_TOKEN`
+- **Name**: `KAGGLE_API_TOKEN`
+- **Value**: Your Kaggle API token (find it at kaggle.com → Account → API → Create New Token, copy the `key` value)
+- Click **Add secret**
+
+#### Add Secret #7: `LOOKER_STUDIO_REPORT_ID`
+- **Name**: `LOOKER_STUDIO_REPORT_ID`
+- **Value**: Your Looker Studio report UUID (from the report URL)
+- Click **Add secret**
+
+#### Add Secret #8: `AIRFLOW_DB_PASSWORD`
+- **Name**: `AIRFLOW_DB_PASSWORD`
+- **Value**: Password for the Airflow PostgreSQL metadata database
+- Click **Add secret**
+
+#### Optional Secret #9: `DOCKER_IMAGE_REPOSITORY`
 - **Name**: `DOCKER_IMAGE_REPOSITORY`
 - **Value**: Docker image repository to push from CD (for example `yourdockerhubuser/your-image-name`)
 - If omitted, CD defaults to `patelvipulkumar/grocerysalesendtoend`
 - Use this if you are forking this project or want to publish to your own repo
+
+#### Optional Secret #10: `GCE_INSTANCE_NAME`
+- **Name**: `GCE_INSTANCE_NAME`
+- **Value**: Name of the GCE VM instance where Airflow runs (e.g. `airflow-vm`)
+- If set alongside `GCE_ZONE`, CD will SSH into the VM and run `docker-compose pull && docker-compose up -d` automatically
+- If omitted, the deploy step prints manual instructions and exits successfully
+
+#### Optional Secret #11: `GCE_ZONE`
+- **Name**: `GCE_ZONE`
+- **Value**: GCP zone of the GCE VM (e.g. `us-west1-a`)
+- Required together with `GCE_INSTANCE_NAME` to enable automated GCE deployment
+
+#### Optional Secret #12: `GCE_APP_DIR`
+- **Name**: `GCE_APP_DIR`
+- **Value**: Directory on VM where `docker-compose.yml` is located (e.g. `/opt/grocery-sales-insights`)
+- If omitted, CD uses `/opt/grocery-sales-insights` by default
 
 ### 3. Verify Secrets Are Set
 
 Go back to **Settings** → **Secrets and variables** → **Actions** and confirm:
 - ✅ `GCP_PROJECT_ID` listed
 - ✅ `GCP_SA_KEY` listed
+- ✅ `GCP_REGION` listed
 - ✅ `DOCKERHUB_USERNAME` listed
 - ✅ `DOCKERHUB_TOKEN` listed
+- ✅ `KAGGLE_API_TOKEN` listed
+- ✅ `LOOKER_STUDIO_REPORT_ID` listed
+- ✅ `AIRFLOW_DB_PASSWORD` listed
 - ✅ `DOCKER_IMAGE_REPOSITORY` listed (optional)
+- ✅ `GCE_INSTANCE_NAME` listed (optional — enables automated GCE deployment)
+- ✅ `GCE_ZONE` listed (optional — required with GCE_INSTANCE_NAME)
+- ✅ `GCE_APP_DIR` listed (optional — defaults to `/opt/grocery-sales-insights`)
 
 Both should show "Last used: Never" (until workflows run).
 

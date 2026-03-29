@@ -4,13 +4,10 @@
 
 name: CD
 
-# Uncomment to enable CD on main branch push after end-to-end testing complete
-#on:
-#  push:
-#    branches: [main]
-
 on:
-  workflow_dispatch:  # Manual trigger only
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -32,6 +29,10 @@ jobs:
           echo "Missing required secret: GCP_SA_KEY"
           missing=1
         fi
+        if [ -z "${{ secrets.GCP_REGION }}" ]; then
+          echo "Missing required secret: GCP_REGION"
+          missing=1
+        fi
         if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
           echo "Missing required secret: DOCKERHUB_USERNAME"
           missing=1
@@ -40,10 +41,27 @@ jobs:
           echo "Missing required secret: DOCKERHUB_TOKEN"
           missing=1
         fi
+        if [ -z "${{ secrets.KAGGLE_API_TOKEN }}" ]; then
+          echo "Missing required secret: KAGGLE_API_TOKEN"
+          missing=1
+        fi
+        if [ -z "${{ secrets.LOOKER_STUDIO_REPORT_ID }}" ]; then
+          echo "Missing required secret: LOOKER_STUDIO_REPORT_ID"
+          missing=1
+        fi
+        if [ -z "${{ secrets.AIRFLOW_DB_PASSWORD }}" ]; then
+          echo "Missing required secret: AIRFLOW_DB_PASSWORD"
+          missing=1
+        fi
         if [ "$missing" -ne 0 ]; then
           echo "One or more required secrets are missing. See GITHUB_SECRETS_SETUP.md"
           exit 1
         fi
+
+    - name: Write GCP credentials file
+      run: |
+        echo '${{ secrets.GCP_SA_KEY }}' > /tmp/gcp-key.json
+        echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> "$GITHUB_ENV"
 
     - name: Resolve image repository
       run: |
@@ -64,18 +82,31 @@ jobs:
         service_account_key: ${{ secrets.GCP_SA_KEY }}
         export_default_credentials: true
 
+    - name: Install Terraform
+      run: |
+        curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+        sudo apt-get update && sudo apt-get install -y terraform
+
+    - name: Terraform Init and Apply
+      working-directory: terraform
+      env:
+        TF_VAR_credentials: /tmp/gcp-key.json
+        TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+        TF_VAR_region: ${{ secrets.GCP_REGION }}
+        TF_VAR_kaggle_api_token: ${{ secrets.KAGGLE_API_TOKEN }}
+        TF_VAR_looker_studio_report_id: ${{ secrets.LOOKER_STUDIO_REPORT_ID }}
+        TF_VAR_airflow_db_password: ${{ secrets.AIRFLOW_DB_PASSWORD }}
+      run: |
+        terraform init
+        terraform plan -out=tfplan
+        terraform apply -auto-approve tfplan
+
     - name: Authenticate to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Terraform Init and Apply
-      working-directory: terraform
-      run: |
-        terraform init
-        terraform plan -out=tfplan
-        terraform apply -auto-approve tfplan
 
     - name: Build and push Docker images
       run: |
@@ -83,7 +114,40 @@ jobs:
         docker push $DOCKER_IMAGE:latest
         docker push $DOCKER_IMAGE:${{ github.sha }}
 
-    - name: Deploy (GCE or GKE placeholder)
+    - name: Deploy
+      env:
+        GCE_INSTANCE: ${{ secrets.GCE_INSTANCE_NAME }}
+        GCE_ZONE: ${{ secrets.GCE_ZONE }}
+        GCE_APP_DIR: ${{ secrets.GCE_APP_DIR }}
       run: |
-        echo "Deploy step: update VM/container to use latest image or redeploy service."
-        # Add project-specific deployment commands here (e.g., gcloud compute instances update-container, gcloud run deploy, etc.)
+        echo "=== Terraform Provisioned Resources ==="
+        cd terraform && terraform output && cd ..
+
+        echo ""
+        echo "=== Docker Image Published ==="
+        echo "Image: $DOCKER_IMAGE:latest"
+        echo "SHA:   $DOCKER_IMAGE:${{ github.sha }}"
+
+        if [ -n "$GCE_INSTANCE" ] && [ -n "$GCE_ZONE" ]; then
+          APP_DIR="${GCE_APP_DIR:-/opt/grocery-sales-insights}"
+          echo ""
+          echo "=== Deploying to GCE instance: $GCE_INSTANCE (zone: $GCE_ZONE, app dir: $APP_DIR) ==="
+          gcloud compute ssh "$GCE_INSTANCE" --zone="$GCE_ZONE" --quiet --command="
+            cd $APP_DIR && \
+            git pull --ff-only && \
+            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.yml pull && \
+            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.yml up -d
+          "
+          echo "Deployment complete."
+        else
+          echo ""
+          echo "=== Automated GCE deployment skipped (no GCE_INSTANCE_NAME / GCE_ZONE secrets set) ==="
+          echo "To deploy Airflow manually on your target machine, run:"
+          echo "  DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.yml pull"
+          echo "  DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.yml up -d"
+          echo ""
+          echo "To enable automated GCE deployment, add these optional secrets:"
+          echo "  GCE_INSTANCE_NAME: your GCE VM instance name"
+          echo "  GCE_ZONE:          your GCE zone (e.g. us-west1-a)"
+          echo "  GCE_APP_DIR:       path on VM where docker-compose.yml lives (default: /opt/grocery-sales-insights)"
+        fi

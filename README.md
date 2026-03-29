@@ -220,11 +220,11 @@ graph TB
 - Git
 - GCP account with service account key (for deployment)
 - Kaggle API token
-- For CI/CD execution: configure GitHub Actions repository secrets (`GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`) and optionally `DOCKER_IMAGE_REPOSITORY` using `GITHUB_SECRETS_SETUP.md`
+- For CI/CD execution: configure GitHub Actions repository secrets (`GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`) and optionally `DOCKER_IMAGE_REPOSITORY` using [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md)
 
 Note: CI is patch-pinned to Python 3.12.10 in `.github/workflows/ci.yml` for reproducible pipeline behavior.
 
-CI/CD prerequisite note: workflows in `.github/workflows/ci.yml` and `.github/workflows/cd.yml` require GitHub repository secrets to be configured before they can run successfully. Follow `GITHUB_SECRETS_SETUP.md` before enabling or triggering pipelines. CD pushes to `patelvipulkumar/grocerysalesendtoend` by default, and you can override this by setting `DOCKER_IMAGE_REPOSITORY` (for example, your own Docker Hub repo).
+CI/CD prerequisite note: workflows in `.github/workflows/ci.yml` and `.github/workflows/cd.yml` require GitHub repository secrets to be configured before they can run successfully. Follow [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md) before enabling or triggering pipelines. CD pushes to `patelvipulkumar/grocerysalesendtoend` by default, and you can override this by setting `DOCKER_IMAGE_REPOSITORY` (for example, your own Docker Hub repo).
 
 ### CI/CD Image Repository Scenarios
 
@@ -252,16 +252,9 @@ cd grocery-sales-insights
 
 # Create local environment file from template
 cp .env.example .env
-
-# Edit .env and set values for your environment
-# GCP_PROJECT=your-project-id
-# RAW_BUCKET=grocery-raw
-# LOOKER_STUDIO_REPORT_ID=your-report-id
 ```
 
-### 1.1 Required Local Files (`.env` and `gcp-key.json`)
-
-Create a `.env` file in the project root with at least:
+Edit `.env` file in the project root with proper values against each key:
 
 ```dotenv
 GCP_PROJECT=your-gcp-project-id
@@ -273,7 +266,7 @@ LOOKER_STUDIO_REPORT_ID=your-looker-report-id
 GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/gcp-key.json
 ```
 
-Create a service-account key file named `gcp-key.json` in the project root (same level as `docker-compose.yml`).
+Create a service-account key file named `gcp-key.json` in the project root (same level as `docker-compose.yml`). This file should have actual key value using which you can access GCP.
 
 Minimum required IAM roles for the service account:
 - Storage Admin (for GCS upload)
@@ -333,7 +326,7 @@ export KAGGLE_KEY="your-kaggle-api-key"
 
 generate key using ssh-keygen and get ssh key from .pub file and add it under metadata section on Google Cloud
 
-export GOOGLE_APPLICATION_CREDENTIALS="/path-to-gcp-key.json"
+export GOOGLE_APPLICATION_CREDENTIALS="/path-to-/gcp-key.json"
 
 Create VM with particular image and necessary storage configuration
 
@@ -346,7 +339,7 @@ use below command to authenticate on GCP VM
 gcloud auth application-default login
 
 # SSH into VM
-gcloud compute ssh grocery-analytics-vm --zone=us-central1-a
+gcloud compute ssh YOUR-VM-NAME --zone=YOUR-VM-ZONE
 
 ```
 
@@ -369,7 +362,7 @@ project_id = "your-project-id"
 region = "Region of gcp VM"
 kaggle_api_token = "your-kaggle-api-key"
 looker_studio_report_id = "your-looker-report-id"
-airflow_db_password = "strong-password"
+airflow_db_password = "airflow"
 ```
 
 ```bash
@@ -761,8 +754,38 @@ flake8 airflow/dags/
 
 ### GitHub Actions CI/CD
 
-- **On Push/PR:** Run lint, DBT compile, tests, Terraform fmt
-- **On Merge to Main:** Build Docker image, push to GCR, trigger Terraform apply
+- **On Push/PR to `main`:** Run lint, dbt parse/compile, DAG import checks, Terraform fmt
+- **On Push to `main`:** Run CD to apply Terraform, build/push Docker image to Docker Hub, and deploy updated services
+
+### Production Image Deployment Flow
+
+1. CD builds one Airflow image from `airflow/Dockerfile` and pushes two tags:
+    - `latest`
+    - commit SHA (`${{ github.sha }}`)
+2. During deploy, CD injects runtime variables into Compose:
+    - `DOCKER_IMAGE_REPOSITORY`
+    - `AIRFLOW_IMAGE_TAG=${{ github.sha }}`
+3. CD runs on VM using only base Compose file:
+    - `docker-compose -f docker-compose.yml pull`
+    - `docker-compose -f docker-compose.yml up -d`
+4. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`) pull and run the exact immutable SHA image.
+5. Spark services continue using their pinned upstream images from `docker-compose.yml`.
+
+Local development note:
+- Keep using `docker-compose up -d` locally. `docker-compose.override.yml` retains local build-based behavior for Airflow services.
+
+Quick Verify on VM (after CD deploy):
+
+```bash
+cd /opt/grocery-sales-insights
+docker-compose ps
+
+# Verify Airflow services are running the expected immutable tag
+docker ps --format 'table {{.Names}}\t{{.Image}}' | grep -E 'airflow-(webserver|scheduler|worker)'
+
+# Optional: inspect one container image tag directly
+docker inspect --format '{{.Config.Image}}' $(docker-compose ps -q airflow-webserver)
+```
 
 ## 📊 Creating Looker Studio Dashboard
 
@@ -773,9 +796,12 @@ flake8 airflow/dags/
 5. Share report ID with team (used in Terraform variables)
 6. Airflow automatically refreshes the dashboard after each pipeline run
 
-Detailed 5-page build guide is kept in a local-only file to avoid pushing it to GitHub:
+Live dashboard:
+- [View Looker Studio Report](https://lookerstudio.google.com/reporting/5047d0a5-d949-48dd-bdb5-171e45e58c0f)
 
-- `LOOKER_STUDIO_5_PAGE.local.md`
+Detailed 6-page build guide can be accessible at below location:
+
+- [LOOKER_STUDIO_6_PAGE.local.md](LOOKER_STUDIO_6_PAGE.local.md)
 
 ## 🐛 Troubleshooting
 
@@ -817,7 +843,7 @@ docker-compose up
 1. Failure: missing secret message in CD logs
 - Cause: one or more required secrets are not configured.
 - Fix: add `GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` in GitHub repository secrets.
-- Reference: `GITHUB_SECRETS_SETUP.md`.
+- Reference: [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md).
 
 2. Failure: Docker login unauthorized
 - Cause: invalid Docker Hub username/token pair.
@@ -834,8 +860,8 @@ docker-compose up
 - Fix: remove or update `DOCKER_IMAGE_REPOSITORY` to desired target.
 
 5. Failure: workflow does not trigger automatically
-- Cause: workflows are currently configured for manual dispatch only.
-- Fix: uncomment `on:` push/PR triggers in `.github/workflows/ci.yml` and `.github/workflows/cd.yml` when ready.
+- Cause: push was not on `main`, workflow file not present in the pushed commit, or Actions are disabled for the repository.
+- Fix: push to `main`, verify workflow files exist under `.github/workflows/`, and ensure Actions are enabled in repository settings.
 
 ## 📚 Documentation
 

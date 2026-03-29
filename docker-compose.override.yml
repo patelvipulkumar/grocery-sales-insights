@@ -1,0 +1,18 @@
+services:
+  airflow-webserver:
+    pull_policy: never
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+
+  airflow-scheduler:
+    pull_policy: never
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+
+  airflow-worker:
+    pull_policy: never
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile

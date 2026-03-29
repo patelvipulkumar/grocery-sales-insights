@@ -4,15 +4,12 @@
 
 name: CI
 
-# Uncomment to enable CI on push/PR after end-to-end testing complete
-#on:
-# push:
-#  branches: [main]
-#pull_request:
-# branches: [main]
-
 on:
-  workflow_dispatch:  # Manual trigger only
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   lint-and-test:
@@ -29,6 +26,16 @@ jobs:
           POSTGRES_DB: airflow
         options: >-
           --health-cmd "pg_isready -U airflow" \
+          --health-interval 10s \
+          --health-timeout 5s \
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" \
           --health-interval 10s \
           --health-timeout 5s \
           --health-retries 5
@@ -57,14 +64,32 @@ jobs:
 
     - name: Run dbt compile
       working-directory: dbt
+      env:
+        GCP_PROJECT: ci-placeholder
+        GOOGLE_APPLICATION_CREDENTIALS: /dev/null
       run: |
         dbt deps --profiles-dir .
+        dbt parse --profiles-dir .
         dbt compile --profiles-dir .
 
-    - name: Run dbt test (non-destructive)
-      working-directory: dbt
+    # dbt test requires a live BigQuery connection (not available in CI without GCP credentials).
+    # Full dbt tests should be run in the CD pipeline or a dedicated integration test workflow.
+    # - name: Run dbt test (non-destructive)
+    #   working-directory: dbt
+    #   run: |
+    #     dbt test --profiles-dir .
+
+    - name: Validate Airflow DAG imports
+      env:
+        AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@localhost/airflow
+        AIRFLOW__CELERY__BROKER_URL: redis://localhost:6379/0
+        AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@localhost/airflow
+        AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+        GCP_PROJECT: ci-placeholder
+        GOOGLE_APPLICATION_CREDENTIALS: /dev/null
       run: |
-        dbt test --profiles-dir .
+        airflow db migrate
+        python -c "from airflow.models import DagBag; db = DagBag('airflow/dags', include_examples=False); errors = db.import_errors; print(f'DAGs loaded: {len(db.dags)}, import errors: {len(errors)}'); [print(f'  ERROR {k}: {v}') for k, v in errors.items()]; exit(1 if errors else 0)"
 
     - name: Run python lint checks
       run: |

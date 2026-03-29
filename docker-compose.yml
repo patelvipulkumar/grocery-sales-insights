@@ -16,9 +16,7 @@ services:
       - "6379:6379"
 
   airflow-webserver:
-    build:
-      context: ./airflow
-      dockerfile: Dockerfile
+    image: ${DOCKER_IMAGE_REPOSITORY:-patelvipulkumar/grocerysalesendtoend}:${AIRFLOW_IMAGE_TAG:-latest}
     depends_on:
       - postgres
       - redis
@@ -56,9 +54,7 @@ services:
     command: bash -c "airflow db migrate && airflow api-server"
 
   airflow-scheduler:
-    build:
-      context: ./airflow
-      dockerfile: Dockerfile
+    image: ${DOCKER_IMAGE_REPOSITORY:-patelvipulkumar/grocerysalesendtoend}:${AIRFLOW_IMAGE_TAG:-latest}
     depends_on:
       - postgres
       - redis
@@ -90,9 +86,7 @@ services:
     command: bash -c "airflow db migrate && airflow scheduler"
 
   airflow-worker:
-    build:
-      context: ./airflow
-      dockerfile: Dockerfile
+    image: ${DOCKER_IMAGE_REPOSITORY:-patelvipulkumar/grocerysalesendtoend}:${AIRFLOW_IMAGE_TAG:-latest}
     depends_on:
       - postgres
       - redis

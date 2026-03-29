@@ -1,4 +1,4 @@
-# Looker Studio Complete 5-Page Build (Local-Only)
+# Looker Studio Complete 6-Page Build (Local-Only)
 
 Estimated effort for first build: 90-150 minutes.
 
@@ -58,6 +58,8 @@ Formatting guidance:
 - Show comparison to previous period for revenue and profit.
 - Use conditional color cues for trend movement.
 
+![Executive Overview Dashboard](dashboard-screenshots/Executive%20Overview.jpg)
+
 ## Page 2: Product Performance
 
 Data source: grocery_analytics.mart_sales_summary
@@ -80,6 +82,8 @@ Charts and widgets:
    - X axis: SUM(total_units_sold)
    - Y axis: SUM(total_revenue)
    - Bubble size: SUM(total_profit)
+
+![Product Performance Dashboard](dashboard-screenshots/Product%20Performance.jpg)
 
 ## Page 3: Customer Insights
 
@@ -104,6 +108,8 @@ Charts and widgets:
 Interaction guidance:
 - Enable cross-filtering so selecting a segment filters related visuals.
 
+![Customer Insights Dashboard](dashboard-screenshots/Customer%20Insights.jpg)
+
 ## Page 4: Sales Team Performance
 
 Data source: grocery_analytics.mart_employee_performance
@@ -122,6 +128,8 @@ Charts and widgets:
    - Metrics: AVG(total_sales_revenue), SUM(total_sales_revenue)
    - Use conditional formatting for quick comparison
 
+![Sales Team Performance Dashboard](dashboard-screenshots/Sales%20Team%20Performance.jpg)
+
 ## Page 5: Recommendations
 
 Data source: grocery_analytics.customer_recommendations
@@ -136,6 +144,8 @@ Charts and widgets:
 3. Rank-1 activation table
    - Filter: recommendation_rank = 1
    - Columns: customer_id, customer_name, product_name, category_name, score
+
+![Recommendations Dashboard](dashboard-screenshots/Recommendations.jpg)
 
 ## Page 6: Spark ML Insights
 
@@ -189,6 +199,8 @@ Model behavior note:
 
 Use case:
 - This page helps business users validate Spark model output quality and prioritize campaign-ready recommendation lists.
+
+![Spark ML Insights Dashboard](dashboard-screenshots/Spark%20ML%20Insights.jpg)
 
 ## Spark ML Tables Schema Reference
 
