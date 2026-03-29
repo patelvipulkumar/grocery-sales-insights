@@ -17,7 +17,7 @@ variable "location" {
 }
 
 variable "region" {
-  type    = string
+  type = string
 }
 
 variable "kaggle_api_token" {
