@@ -15,7 +15,8 @@ target-path: "target"
 clean-targets: ["target", "dbt_modules"]
 
 seeds:
-  +schema: grocery_raw
+  grocery_dbt:
+    +schema: grocery_raw
 
 models:
   grocery_dbt:

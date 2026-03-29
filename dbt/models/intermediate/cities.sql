@@ -12,4 +12,4 @@ select
     CityName,
     Zipcode,
     cast(CountryID as int64) as CountryID
-from {{ seed('cities') }}
+from {{ ref('cities') }}

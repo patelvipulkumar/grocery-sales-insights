@@ -11,4 +11,4 @@ select
     cast(CountryID as int64) as CountryID,
     CountryName,
     CountryCode
-from {{ seed('countries') }}
+from {{ ref('countries') }}

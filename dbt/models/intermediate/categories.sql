@@ -10,4 +10,4 @@
 select
     cast(CategoryID as int64) as CategoryID,
     CategoryName
-from {{ seed('categories') }}
+from {{ ref('categories') }}
