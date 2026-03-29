@@ -58,7 +58,7 @@ def materialize_dataframe(dataframe, label):
         return cached_dataframe
     except Exception as exc:
         print(f"WARNING: Failed to materialize {label}; using lazy evaluation instead. Error: {exc}")
-        print(f"  This may impact performance but allows job to proceed with limited cluster memory.")
+        print("  This may impact performance but allows job to proceed with limited cluster memory.")
         return dataframe
 
 
