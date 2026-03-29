@@ -190,11 +190,25 @@ jobs:
             set -e && \
             TARGET_DIR=\"\$HOME/grocery-sales-insights\" && \
             mkdir -p \"\$TARGET_DIR\" && \
+            if [ -d \"\$TARGET_DIR/gcp-key.json\" ]; then rm -rf \"\$TARGET_DIR/gcp-key.json\"; fi && \
             if [ ! -d \"\$TARGET_DIR/.git\" ]; then \
+              if [ -n \"\$(ls -A \"\$TARGET_DIR\" 2>/dev/null)\" ]; then rm -rf \"\$TARGET_DIR\"; fi && \
               git clone https://github.com/${{ github.repository }}.git \"\$TARGET_DIR\"; \
             fi && \
             cd \"\$TARGET_DIR\" && \
-            git pull --ff-only && \
+            git pull --ff-only
+          "
+          gcloud compute scp /tmp/gcp-key.json "$GCE_INSTANCE":~/grocery-sales-insights/gcp-key.json --zone="$GCE_ZONE" --quiet
+          gcloud compute ssh "$GCE_INSTANCE" --zone="$GCE_ZONE" --quiet --command="
+            set -e && \
+            TARGET_DIR=\"\$HOME/grocery-sales-insights\" && \
+            mkdir -p \"\$TARGET_DIR\" && \
+            cd \"\$TARGET_DIR\" && \
+            if [ ! -f gcp-key.json ]; then \
+              echo 'ERROR: gcp-key.json was not copied to the VM as a file.'; \
+              exit 1; \
+            fi && \
+            chmod 600 gcp-key.json && \
             if ! sudo -n true > /dev/null 2>&1; then \
               echo 'ERROR: Remote user requires passwordless sudo for automated deploy.'; \
               echo 'Grant NOPASSWD sudo or add the user to docker group and update workflow.'; \
