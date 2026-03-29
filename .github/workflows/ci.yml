@@ -24,24 +24,31 @@ jobs:
           POSTGRES_USER: airflow
           POSTGRES_PASSWORD: airflow
           POSTGRES_DB: airflow
-        options: >-
-          --health-cmd "pg_isready -U airflow" \
-          --health-interval 10s \
-          --health-timeout 5s \
-          --health-retries 5
+        options: --health-cmd="pg_isready -U airflow" --health-interval=10s --health-timeout=5s --health-retries=5
 
       redis:
         image: redis:7
         ports:
           - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping" \
-          --health-interval 10s \
-          --health-timeout 5s \
-          --health-retries 5
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Wait for Postgres to be ready
+      run: |
+        for i in {1..30}; do
+          if pg_isready -h localhost -U airflow > /dev/null 2>&1; then
+            echo "✓ Postgres is ready"
+            exit 0
+          fi
+          echo "Waiting for Postgres ($i/30)..."
+          sleep 1
+        done
+        echo "✗ Postgres failed to start"
+        exit 1
+      env:
+        PGPASSWORD: airflow
 
     - name: Set up Python
       uses: actions/setup-python@v5
