@@ -165,7 +165,7 @@ jobs:
 
     - name: Build and push Docker images
       run: |
-        docker build -t $DOCKER_IMAGE:latest -t $DOCKER_IMAGE:${{ github.sha }} -f airflow/Dockerfile .
+        docker build -t $DOCKER_IMAGE:latest -t $DOCKER_IMAGE:${{ github.sha }} -f airflow/Dockerfile airflow
         docker push $DOCKER_IMAGE:latest
         docker push $DOCKER_IMAGE:${{ github.sha }}
 
