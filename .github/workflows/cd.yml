@@ -108,6 +108,52 @@ jobs:
         TF_VAR_airflow_db_password: ${{ secrets.AIRFLOW_DB_PASSWORD }}
       run: |
         terraform init
+
+        PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+
+        import_if_exists() {
+          local address="$1"
+          local import_id="$2"
+
+          if terraform state show "$address" > /dev/null 2>&1; then
+            echo "State already contains $address"
+            return 0
+          fi
+
+          echo "Attempting import: $address"
+          if terraform import "$address" "$import_id" > /dev/null 2>&1; then
+            echo "Imported $address"
+          else
+            echo "No import for $address (resource may not exist yet); continuing"
+          fi
+        }
+
+        import_if_exists \
+          "google_service_account.airflow" \
+          "projects/${PROJECT_ID}/serviceAccounts/airflow-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+
+        import_if_exists "google_storage_bucket.raw_bucket" "grocery-raw"
+
+        import_if_exists \
+          "google_bigquery_dataset.raw" \
+          "projects/${PROJECT_ID}/datasets/grocery_raw"
+        import_if_exists \
+          "google_bigquery_dataset.analytics" \
+          "projects/${PROJECT_ID}/datasets/grocery_analytics"
+        import_if_exists \
+          "google_bigquery_dataset.staging" \
+          "projects/${PROJECT_ID}/datasets/grocery_staging"
+
+        import_if_exists \
+          "google_secret_manager_secret.kaggle_api" \
+          "projects/${PROJECT_ID}/secrets/kaggle-api-token"
+        import_if_exists \
+          "google_secret_manager_secret.looker_studio_report_id" \
+          "projects/${PROJECT_ID}/secrets/looker-studio-report-id"
+        import_if_exists \
+          "google_secret_manager_secret.airflow_db_password" \
+          "projects/${PROJECT_ID}/secrets/airflow-db-password"
+
         terraform plan -out=tfplan
         terraform apply -auto-approve tfplan
 
