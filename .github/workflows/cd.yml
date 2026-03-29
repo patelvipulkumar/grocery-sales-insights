@@ -189,16 +189,17 @@ jobs:
           echo "=== Deploying to GCE instance: $GCE_INSTANCE (zone: $GCE_ZONE, app dir: $APP_DIR) ==="
           gcloud compute ssh "$GCE_INSTANCE" --zone="$GCE_ZONE" --quiet --command="
             set -e && \
-            REMOTE_USER=\$(id -un) && \
-            REMOTE_GROUP=\$(id -gn) && \
-            if [ ! -d '$APP_DIR' ]; then \
-              sudo mkdir -p '$APP_DIR'; \
-              sudo chown \"\$REMOTE_USER\":\"\$REMOTE_GROUP\" '$APP_DIR'; \
+            TARGET_DIR='$APP_DIR' && \
+            FALLBACK_DIR=\"\$HOME/grocery-sales-insights\" && \
+            if ! cd \"\$TARGET_DIR\" > /dev/null 2>&1; then \
+              echo \"Cannot access \$TARGET_DIR; falling back to \$FALLBACK_DIR\"; \
+              TARGET_DIR=\"\$FALLBACK_DIR\"; \
+              mkdir -p \"\$TARGET_DIR\"; \
             fi && \
-            if [ ! -x '$APP_DIR' ] || [ ! -w '$APP_DIR' ]; then \
-              sudo chown -R \"\$REMOTE_USER\":\"\$REMOTE_GROUP\" '$APP_DIR'; \
+            if [ ! -d \"\$TARGET_DIR/.git\" ]; then \
+              git clone https://github.com/${{ github.repository }}.git \"\$TARGET_DIR\"; \
             fi && \
-            cd '$APP_DIR' && \
+            cd \"\$TARGET_DIR\" && \
             git pull --ff-only && \
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.yml pull && \
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.yml up -d
