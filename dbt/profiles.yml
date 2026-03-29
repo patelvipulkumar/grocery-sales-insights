@@ -9,7 +9,7 @@ grocery_gcp:
       type: bigquery
       method: service-account
       project: "{{ env_var('GCP_PROJECT', 'ci-placeholder') }}"
-      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '/dev/null') }}"
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '../gcp-key.json') }}"
       dataset: grocery_raw
       location: US
       threads: 4

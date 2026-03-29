@@ -1,12 +1,11 @@
 # High-level logic:
-# Documents seed data models loaded from CSV files in dbt/data/
-# Seeds are converted to tables in the raw schema and available for reference in dbt models.
+# Documents geography lookup models derived from seed data.
 
 version: 2
 
-seeds:
+models:
   - name: categories
-    description: Product categories seed data
+    description: Categories lookup model built from seed data
     columns:
       - name: CategoryID
         description: Unique category identifier
@@ -16,7 +15,7 @@ seeds:
         data_type: string
 
   - name: cities
-    description: City lookup seed data
+    description: Cities lookup model built from seed data
     columns:
       - name: CityID
         description: Unique city identifier
@@ -28,11 +27,11 @@ seeds:
         description: Postal code of the city
         data_type: string
       - name: CountryID
-        description: Foreign key to countries seed
+        description: Foreign key to countries model
         data_type: int64
 
   - name: countries
-    description: Country lookup seed data
+    description: Countries lookup model built from seed data
     columns:
       - name: CountryID
         description: Unique country identifier
