@@ -20,8 +20,8 @@ with customers as (
         co.CountryName,
         co.CountryCode
     from {{ source('grocery_raw', 'customers') }} c
-    left join {{ ref('cities') }} ci on c.cityID = ci.CityID
-    left join {{ ref('countries') }} co on ci.CountryID = co.CountryID
+    left join {{ ref('dim_cities') }} ci on c.cityID = ci.CityID
+    left join {{ ref('dim_countries') }} co on ci.CountryID = co.CountryID
 )
 
 select

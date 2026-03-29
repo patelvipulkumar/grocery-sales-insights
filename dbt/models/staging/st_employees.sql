@@ -22,8 +22,8 @@ with employees as (
         co.CountryName,
         co.CountryCode
     from {{ source('grocery_raw', 'employees') }} e
-    left join {{ ref('cities') }} c on e.CityID = c.CityID
-    left join {{ ref('countries') }} co on c.CountryID = co.CountryID
+    left join {{ ref('dim_cities') }} c on e.CityID = c.CityID
+    left join {{ ref('dim_countries') }} co on c.CountryID = co.CountryID
 )
 
 select

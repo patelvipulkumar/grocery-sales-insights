@@ -20,7 +20,7 @@ with products as (
         p.VitalityDays,
         c.CategoryName
     from {{ source('grocery_raw', 'products') }} p
-    left join {{ ref('categories') }} c on p.CategoryID = c.CategoryID
+    left join {{ ref('dim_categories') }} c on p.CategoryID = c.CategoryID
 )
 
 select
