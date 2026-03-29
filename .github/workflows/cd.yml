@@ -173,7 +173,6 @@ jobs:
       env:
         GCE_INSTANCE: ${{ secrets.GCE_INSTANCE_NAME }}
         GCE_ZONE: ${{ secrets.GCE_ZONE }}
-        GCE_APP_DIR: ${{ secrets.GCE_APP_DIR }}
       run: |
         echo "=== Terraform Provisioned Resources ==="
         cd terraform && terraform output && cd ..
@@ -184,18 +183,13 @@ jobs:
         echo "SHA:   $DOCKER_IMAGE:${{ github.sha }}"
 
         if [ -n "$GCE_INSTANCE" ] && [ -n "$GCE_ZONE" ]; then
-          APP_DIR="${GCE_APP_DIR:-/opt/grocery-sales-insights}"
+          APP_DIR="\$HOME/grocery-sales-insights"
           echo ""
           echo "=== Deploying to GCE instance: $GCE_INSTANCE (zone: $GCE_ZONE, app dir: $APP_DIR) ==="
           gcloud compute ssh "$GCE_INSTANCE" --zone="$GCE_ZONE" --quiet --command="
             set -e && \
-            TARGET_DIR='$APP_DIR' && \
-            FALLBACK_DIR=\"\$HOME/grocery-sales-insights\" && \
-            if ! cd \"\$TARGET_DIR\" > /dev/null 2>&1; then \
-              echo \"Cannot access \$TARGET_DIR; falling back to \$FALLBACK_DIR\"; \
-              TARGET_DIR=\"\$FALLBACK_DIR\"; \
-              mkdir -p \"\$TARGET_DIR\"; \
-            fi && \
+            TARGET_DIR=\"\$HOME/grocery-sales-insights\" && \
+            mkdir -p \"\$TARGET_DIR\" && \
             if [ ! -d \"\$TARGET_DIR/.git\" ]; then \
               git clone https://github.com/${{ github.repository }}.git \"\$TARGET_DIR\"; \
             fi && \
@@ -215,5 +209,4 @@ jobs:
           echo "To enable automated GCE deployment, add these optional secrets:"
           echo "  GCE_INSTANCE_NAME: your GCE VM instance name"
           echo "  GCE_ZONE:          your GCE zone (e.g. us-west1-a)"
-          echo "  GCE_APP_DIR:       path on VM where docker-compose.yml lives (default: /opt/grocery-sales-insights)"
         fi
