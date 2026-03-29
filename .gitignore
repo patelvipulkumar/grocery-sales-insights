@@ -36,7 +36,9 @@ airflow/simple_auth_manager_passwords.json
 dbt_packages/
 target/
 
-data/
+/data/
+!/dbt/data/
+!/dbt/data/*.csv
 
 # local docker compose states
 *.log
