@@ -207,6 +207,9 @@ jobs:
             set -e && \
             TARGET_DIR=\"\$HOME/grocery-sales-insights\" && \
             mkdir -p \"\$TARGET_DIR\" && \
+            if sudo -n true > /dev/null 2>&1; then \
+              sudo -n chown -R \"\$USER:\$USER\" \"\$TARGET_DIR\" 2>/dev/null || true; \
+            fi && \
             cd \"\$TARGET_DIR\" && \
             mkdir -p spark-events && \
             sudo -n chmod 777 spark-events && \
