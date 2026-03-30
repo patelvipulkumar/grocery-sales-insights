@@ -183,6 +183,7 @@ jobs:
         echo "SHA:   $DOCKER_IMAGE:${{ github.sha }}"
 
         if [ -n "$GCE_INSTANCE" ] && [ -n "$GCE_ZONE" ]; then
+          GCP_SA_KEY_B64="$(base64 -w 0 /tmp/gcp-key.json)"
           APP_DIR="\$HOME/grocery-sales-insights"
           echo ""
           echo "=== Deploying to GCE instance: $GCE_INSTANCE (zone: $GCE_ZONE, app dir: $APP_DIR) ==="
@@ -225,7 +226,8 @@ jobs:
               echo 'Install Docker Compose v2 and rerun deployment.'; \
               exit 1; \
             fi && \
-            export GCP_SA_KEY='${{ secrets.GCP_SA_KEY }}' && \
+            GCP_SA_KEY_B64='${GCP_SA_KEY_B64}' && \
+            GCP_SA_KEY=\"\$(printf '%s' \"\$GCP_SA_KEY_B64\" | base64 -d)\" && \
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} GCP_SA_KEY=\"\$GCP_SA_KEY\" sudo -n docker compose -f docker-compose.yml pull && \
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} GCP_SA_KEY=\"\$GCP_SA_KEY\" sudo -n docker compose -f docker-compose.yml up -d --remove-orphans && \
             (sudo -n chmod -R a+rX \"\$TARGET_DIR\" 2>/dev/null || true)
