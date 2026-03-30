@@ -787,7 +787,7 @@ flake8 airflow/dags/
 3. CD runs on VM using only base Compose file:
     - `docker compose -f docker-compose.yml pull`
     - `docker compose -f docker-compose.yml up -d --remove-orphans`
-4. On this server, deployment checkout path is under the runner home: `/home/runner/grocery-sales-insights`.
+4. On this server, deployment checkout path is `/opt/grocery-sales-insights`.
 5. GCP credentials are passed as the `GOOGLE_APPLICATION_CREDENTIALS_JSON` environment variable from GitHub secrets and written to a temporary file inside containers at startup (via the entrypoint script), ensuring the credential file never persists on the VM filesystem.
 6. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-dag-processor`) pull and run the exact immutable SHA image.
 7. Spark services continue using pinned upstream images from `docker-compose.yml` (`apache/spark:3.5.8-java17-python3`).
@@ -798,7 +798,7 @@ Local development note:
 Quick Verify on VM (after CD deploy):
 
 ```bash
-cd /home/runner/grocery-sales-insights
+cd /opt/grocery-sales-insights
 docker compose ps
 
 # Verify Airflow services are running the expected immutable tag
