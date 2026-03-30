@@ -211,6 +211,7 @@ graph TB
 - Git
 - GCP account with service account key (for deployment)
 - Kaggle API token
+- For GitHub CD deployment to a VM: Docker Engine, Docker Compose v2 plugin (`docker compose version`), and passwordless `sudo` for the deploy user on the target VM
 - For CI/CD execution, configure GitHub Actions repository secrets using [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md):
     - Required: `GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `GCP_REGION`, `KAGGLE_API_TOKEN`, `LOOKER_STUDIO_REPORT_ID`, `AIRFLOW_DB_PASSWORD`
     - Optional: `DOCKER_IMAGE_REPOSITORY`, `GCE_INSTANCE_NAME`, `GCE_ZONE`
@@ -218,6 +219,8 @@ graph TB
 Note: CI is patch-pinned to Python 3.12.10 in `.github/workflows/ci.yml` for reproducible pipeline behavior.
 
 CI/CD prerequisite note: workflows in `.github/workflows/ci.yml` and `.github/workflows/cd.yml` require GitHub repository secrets to be configured before they can run successfully. Follow [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md) before enabling or triggering pipelines. CD pushes to `patelvipulkumar/grocerysalesendtoend` by default, and you can override this by setting `DOCKER_IMAGE_REPOSITORY` (for example, your own Docker Hub repo).
+
+Deployment VM note: the CD workflow requires `docker compose` (Compose v2 plugin). Legacy `docker-compose` v1 is not supported for deployment and can fail during container recreation with `KeyError: 'ContainerConfig'`.
 
 ### CI/CD Image Repository Scenarios
 
@@ -774,8 +777,8 @@ flake8 airflow/dags/
     - `DOCKER_IMAGE_REPOSITORY`
     - `AIRFLOW_IMAGE_TAG=${{ github.sha }}`
 3. CD runs on VM using only base Compose file:
-    - `docker-compose -f docker-compose.yml pull`
-    - `docker-compose -f docker-compose.yml up -d`
+    - `docker compose -f docker-compose.yml pull`
+    - `docker compose -f docker-compose.yml up -d --remove-orphans`
 4. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-dag-processor`) pull and run the exact immutable SHA image.
 5. Spark services continue using pinned upstream images from `docker-compose.yml` (`apache/spark:3.5.8-java17-python3`).
 
@@ -786,13 +789,13 @@ Quick Verify on VM (after CD deploy):
 
 ```bash
 cd /opt/grocery-sales-insights
-docker-compose ps
+docker compose ps
 
 # Verify Airflow services are running the expected immutable tag
 docker ps --format 'table {{.Names}}\t{{.Image}}' | grep -E 'airflow-(webserver|scheduler|worker)'
 
 # Optional: inspect one container image tag directly
-docker inspect --format '{{.Config.Image}}' $(docker-compose ps -q airflow-webserver)
+docker inspect --format '{{.Config.Image}}' $(docker compose ps -q airflow-webserver)
 ```
 
 ## 📊 Creating Looker Studio Dashboard

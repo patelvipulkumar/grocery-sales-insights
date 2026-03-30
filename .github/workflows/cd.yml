@@ -190,6 +190,9 @@ jobs:
             set -e && \
             TARGET_DIR=\"\$HOME/grocery-sales-insights\" && \
             mkdir -p \"\$TARGET_DIR\" && \
+            if sudo -n true > /dev/null 2>&1; then \
+              sudo -n chown -R \"\$USER:\$USER\" \"\$TARGET_DIR\" 2>/dev/null || true; \
+            fi && \
             if [ -d \"\$TARGET_DIR/gcp-key.json\" ]; then rm -rf \"\$TARGET_DIR/gcp-key.json\"; fi && \
             if [ ! -d \"\$TARGET_DIR/.git\" ]; then \
               if [ -n \"\$(ls -A \"\$TARGET_DIR\" 2>/dev/null)\" ]; then rm -rf \"\$TARGET_DIR\"; fi && \
@@ -221,21 +224,22 @@ jobs:
               echo 'Ensure Docker is installed, running, and allowed for sudo on this host.'; \
               exit 1; \
             fi && \
-            if command -v docker-compose > /dev/null 2>&1; then \
-              DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker-compose -f docker-compose.yml pull && \
-              DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker-compose -f docker-compose.yml up -d; \
-            else \
-              DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml pull && \
-              DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml up -d; \
-            fi
+            if ! sudo -n docker compose version > /dev/null 2>&1; then \
+              echo 'ERROR: Docker Compose v2 plugin is required on the VM.'; \
+              echo 'The legacy docker-compose v1 binary can fail with KeyError: ContainerConfig during recreate.'; \
+              echo 'Install Docker Compose v2 and rerun deployment.'; \
+              exit 1; \
+            fi && \
+            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml pull && \
+            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml up -d --remove-orphans
           "
           echo "Deployment complete."
         else
           echo ""
           echo "=== Automated GCE deployment skipped (no GCE_INSTANCE_NAME / GCE_ZONE secrets set) ==="
           echo "To deploy Airflow manually on your target machine, run:"
-          echo "  DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo docker-compose -f docker-compose.yml pull"
-          echo "  DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo docker-compose -f docker-compose.yml up -d"
+          echo "  DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo docker compose -f docker-compose.yml pull"
+          echo "  DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo docker compose -f docker-compose.yml up -d --remove-orphans"
           echo ""
           echo "To enable automated GCE deployment, add these optional secrets:"
           echo "  GCE_INSTANCE_NAME: your GCE VM instance name"
