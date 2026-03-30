@@ -32,6 +32,9 @@ airflow.cfg
 logs/
 airflow/simple_auth_manager_passwords.json
 
+# Spark runtime artifacts
+spark-events/
+
 # dbt
 dbt_packages/
 target/

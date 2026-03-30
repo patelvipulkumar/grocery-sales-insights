@@ -16,3 +16,9 @@ services:
     build:
       context: ./airflow
       dockerfile: Dockerfile
+
+  airflow-dag-processor:
+    pull_policy: never
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile

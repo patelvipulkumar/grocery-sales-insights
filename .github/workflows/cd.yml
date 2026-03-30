@@ -204,6 +204,8 @@ jobs:
             TARGET_DIR=\"\$HOME/grocery-sales-insights\" && \
             mkdir -p \"\$TARGET_DIR\" && \
             cd \"\$TARGET_DIR\" && \
+            mkdir -p spark-events && \
+            sudo -n chmod 777 spark-events && \
             if [ ! -f gcp-key.json ]; then \
               echo 'ERROR: gcp-key.json was not copied to the VM as a file.'; \
               exit 1; \

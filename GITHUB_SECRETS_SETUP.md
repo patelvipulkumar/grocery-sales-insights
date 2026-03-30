@@ -85,11 +85,6 @@ This guide walks you through configuring GitHub repository secrets needed for CI
 - **Value**: GCP zone of the GCE VM (e.g. `us-west1-a`)
 - Required together with `GCE_INSTANCE_NAME` to enable automated GCE deployment
 
-#### Optional Secret #12: `GCE_APP_DIR`
-- **Name**: `GCE_APP_DIR`
-- **Value**: Directory on VM where `docker-compose.yml` is located (e.g. `/opt/grocery-sales-insights`)
-- If omitted, CD uses `/opt/grocery-sales-insights` by default
-
 ### 3. Verify Secrets Are Set
 
 Go back to **Settings** → **Secrets and variables** → **Actions** and confirm:
@@ -104,7 +99,6 @@ Go back to **Settings** → **Secrets and variables** → **Actions** and confir
 - ✅ `DOCKER_IMAGE_REPOSITORY` listed (optional)
 - ✅ `GCE_INSTANCE_NAME` listed (optional — enables automated GCE deployment)
 - ✅ `GCE_ZONE` listed (optional — required with GCE_INSTANCE_NAME)
-- ✅ `GCE_APP_DIR` listed (optional — defaults to `/opt/grocery-sales-insights`)
 
 Both should show "Last used: Never" (until workflows run).
 

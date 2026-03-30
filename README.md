@@ -78,22 +78,13 @@ This project implements a **scalable, automated ELT pipeline** that processes 6.
 
 ### Architecture Highlights
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Grocery Sales Insights Platform                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                        │
-│  📥 INGESTION          │  🔄 TRANSFORMATION      │  📊 VISUALIZATION │
-│  ──────────────────    │  ─────────────────────  │  ────────────────  │
-│  Kaggle Dataset        │  DBT Data Modeling      │  Looker Studio     │
-│  (6.7M records)        │  (Staging/Marts)       │  (Real-time)       │
-│                        │                        │                    │
-│  Google Cloud Storage  │  Spark ML Pipeline     │  Customer Insights │
-│  (Raw landing zone)    │  (Segmentation/Reco)   │  Sales Performance │
-│                        │  BigQuery Analytics    │  Geographic Trends │
-│                        │                        │  Product Analysis  │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| 📥 Ingestion | 🔄 Transformation | 📊 Visualization |
+|---|---|---|
+| Kaggle Dataset (6.7M records) | DBT Data Modeling (Staging/Marts) | Looker Studio (Real-time) |
+| Google Cloud Storage (Raw landing zone) | Spark ML Pipeline (Segmentation/Reco) | Customer Insights |
+|  | BigQuery Analytics | Sales Performance |
+|  |  | Geographic Trends |
+|  |  | Product Analysis |
 
 ### Capabilities
 
@@ -159,8 +150,8 @@ graph TB
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | **Orchestration** | Apache Airflow 3.0.0 | Workflow scheduling & DAG management |
-| **Transformation** | DBT 1.6.0 | Data modeling & quality testing |
-| **ML Processing** | Apache Spark 3.x | Customer segmentation & recommendations |
+| **Transformation** | DBT 1.8.0 | Data modeling & quality testing |
+| **ML Processing** | Apache Spark 3.5.8 (Standalone) | Customer segmentation & recommendations |
 | **Data Warehouse** | Google BigQuery | Scalable analytics & SQL engine |
 | **Data Lake** | Google Cloud Storage | Raw data staging & backup |
 | **Infrastructure** | Terraform | IaC for GCP resources |
@@ -220,7 +211,9 @@ graph TB
 - Git
 - GCP account with service account key (for deployment)
 - Kaggle API token
-- For CI/CD execution: configure GitHub Actions repository secrets (`GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`) and optionally `DOCKER_IMAGE_REPOSITORY` using [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md)
+- For CI/CD execution, configure GitHub Actions repository secrets using [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md):
+    - Required: `GCP_PROJECT_ID`, `GCP_SA_KEY`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `GCP_REGION`, `KAGGLE_API_TOKEN`, `LOOKER_STUDIO_REPORT_ID`, `AIRFLOW_DB_PASSWORD`
+    - Optional: `DOCKER_IMAGE_REPOSITORY`, `GCE_INSTANCE_NAME`, `GCE_ZONE`
 
 Note: CI is patch-pinned to Python 3.12.10 in `.github/workflows/ci.yml` for reproducible pipeline behavior.
 
@@ -297,13 +290,28 @@ docker-compose logs -f airflow-webserver
 # URL: http://localhost:8082
 # Username: admin
 # Password: admin
+# Spark Master UI: http://localhost:8081
+# Spark History Server: http://localhost:18080
+```
+
+Airflow 3 note: the `airflow-dag-processor` service must be running for DAGs to appear in the UI. If the web UI loads but shows no DAGs, confirm `docker-compose ps` shows `airflow-dag-processor` as healthy.
+
+Recommended post-start checks:
+
+```bash
+docker-compose ps
+docker-compose logs --tail=100 airflow-worker
+docker-compose logs --tail=100 airflow-dag-processor
+docker-compose exec airflow-scheduler airflow dags list -B dags-folder
+docker-compose logs --tail=100 spark-history
+ls -la airflow/logs/spark-events
 ```
 
 Rebuild when dependencies change (for example `airflow/requirements.txt` or `airflow/Dockerfile`):
 
 ```bash
-docker-compose build airflow-webserver airflow-scheduler airflow-worker
-docker-compose up -d --force-recreate airflow-webserver airflow-scheduler airflow-worker
+docker-compose build airflow-webserver airflow-scheduler airflow-worker airflow-dag-processor
+docker-compose up -d --force-recreate airflow-webserver airflow-scheduler airflow-worker airflow-dag-processor spark-history
 ```
 
 ### 3. Trigger the DAG
@@ -507,13 +515,13 @@ Detailed logic:
 - Segmentation computes Spark-based RFM metrics and writes `rfm_score`, `segment_id`, and `segment_name`.
 - Recommendations are generated using Spark MLlib ALS and ranked per customer.
 - If interaction data is too sparse (or ALS fails), the job automatically falls back to a co-purchase heuristic recommender.
-- First attempt: Spark standalone cluster mode (`--master spark://spark-master:7077`).
-- Fallback attempt on failure: local Spark mode (`--master local[2]`).
-- Fails only if both attempts fail.
+- Execution target: standalone Spark cluster via `SPARK_MASTER_URL` (default `spark://spark-master:7077`).
+- The DAG now runs cluster-only for `run_spark` and raises task failure if cluster execution fails.
+- Executor credential propagation is explicit through `spark.executorEnv.GOOGLE_APPLICATION_CREDENTIALS`.
 
 Why this matters:
-- Cluster-first execution uses distributed resources when available.
-- Local fallback improves reliability in partial/local environments.
+- Guarantees the DAG reflects true cluster health instead of masking failures with local fallback.
+- Runtime is version-aligned: Airflow `pyspark==3.5.8` with Spark services `apache/spark:3.5.8-java17-python3`.
 
 ### 7) `refresh_looker_studio`
 
@@ -768,8 +776,8 @@ flake8 airflow/dags/
 3. CD runs on VM using only base Compose file:
     - `docker-compose -f docker-compose.yml pull`
     - `docker-compose -f docker-compose.yml up -d`
-4. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`) pull and run the exact immutable SHA image.
-5. Spark services continue using their pinned upstream images from `docker-compose.yml`.
+4. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-dag-processor`) pull and run the exact immutable SHA image.
+5. Spark services continue using pinned upstream images from `docker-compose.yml` (`apache/spark:3.5.8-java17-python3`).
 
 Local development note:
 - Keep using `docker-compose up -d` locally. `docker-compose.override.yml` retains local build-based behavior for Airflow services.

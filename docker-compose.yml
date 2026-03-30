@@ -22,8 +22,10 @@ services:
       - redis
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__INTERNAL_API_SECRET_KEY: ${AIRFLOW_INTERNAL_API_SECRET_KEY:-airflow-internal-api-secret-dev}
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
       AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
@@ -61,8 +63,10 @@ services:
       - airflow-webserver
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__INTERNAL_API_SECRET_KEY: ${AIRFLOW_INTERNAL_API_SECRET_KEY:-airflow-internal-api-secret-dev}
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
       AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
@@ -91,15 +95,55 @@ services:
       - postgres
       - redis
       - airflow-webserver
+      - spark-master
+      - spark-worker
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__INTERNAL_API_SECRET_KEY: ${AIRFLOW_INTERNAL_API_SECRET_KEY:-airflow-internal-api-secret-dev}
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
       AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__CELERY__WORKER_LOG_SERVER_PORT: '8793'
+      AIRFLOW__SECRETS__BACKEND: airflow.providers.google.cloud.secrets.secret_manager.CloudSecretManagerBackend
+      AIRFLOW__SECRETS__BACKEND_KWARGS: '{"project_id":"${GCP_PROJECT:-your-project-id}","variables_prefix":"airflow-variables","connections_prefix":"airflow-connections"}'
+      AIRFLOW__LOGGING__LOG_LEVEL: INFO
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
+      SPARK_MASTER_URL: ${SPARK_MASTER_URL:-spark://spark-master:7077}
+      SPARK_EXECUTOR_GOOGLE_APPLICATION_CREDENTIALS: ${SPARK_EXECUTOR_GOOGLE_APPLICATION_CREDENTIALS:-/opt/spark/conf/gcp-key.json}
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./spark-events:/opt/airflow/logs/spark-events
+      - ./dbt:/opt/airflow/dbt
+      - ./spark:/opt/airflow/spark
+      - ./terraform:/opt/airflow/terraform
+      - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
+    command: bash -c "airflow celery worker"
+
+  airflow-dag-processor:
+    image: ${DOCKER_IMAGE_REPOSITORY:-patelvipulkumar/grocerysalesendtoend}:${AIRFLOW_IMAGE_TAG:-latest}
+    depends_on:
+      - postgres
+      - redis
+      - airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__INTERNAL_API_SECRET_KEY: ${AIRFLOW_INTERNAL_API_SECRET_KEY:-airflow-internal-api-secret-dev}
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__SECRETS__BACKEND: airflow.providers.google.cloud.secrets.secret_manager.CloudSecretManagerBackend
       AIRFLOW__SECRETS__BACKEND_KWARGS: '{"project_id":"${GCP_PROJECT:-your-project-id}","variables_prefix":"airflow-variables","connections_prefix":"airflow-connections"}'
       AIRFLOW__LOGGING__LOG_LEVEL: INFO
@@ -115,19 +159,56 @@ services:
       - ./spark:/opt/airflow/spark
       - ./terraform:/opt/airflow/terraform
       - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
-    command: bash -c "airflow celery worker"
+    command: bash -c "airflow db migrate && airflow dag-processor"
 
   spark-master:
-    image: bde2020/spark-master:3.3.0-hadoop3.3
+    image: apache/spark:3.5.8-java17-python3
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.master.Master
+      - --host
+      - spark-master
+      - --port
+      - "7077"
+      - --webui-port
+      - "8080"
     environment:
-      - INIT_DAEMON_STEP=setup_spark
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/spark/conf/gcp-key.json
+    volumes:
+      - ./gcp-key.json:/opt/spark/conf/gcp-key.json:ro
     ports:
+      - "7077:7077"
       - "8081:8080"
 
   spark-worker:
-    image: bde2020/spark-worker:3.3.0-hadoop3.3
+    image: apache/spark:3.5.8-java17-python3
+    depends_on:
+      - spark-master
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - --webui-port
+      - "8081"
+      - spark://spark-master:7077
     environment:
-      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/spark/conf/gcp-key.json
+    volumes:
+      - ./gcp-key.json:/opt/spark/conf/gcp-key.json:ro
+
+  spark-history:
+    image: apache/spark:3.5.8-java17-python3
+    depends_on:
+      - spark-master
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.history.HistoryServer
+    environment:
+      - SPARK_HISTORY_OPTS=-Dspark.history.fs.logDirectory=file:/opt/airflow/logs/spark-events -Dspark.history.ui.port=18080
+    volumes:
+      - ./spark-events:/opt/airflow/logs/spark-events
+    ports:
+      - "18080:18080"
 
 volumes:
   pgdata:

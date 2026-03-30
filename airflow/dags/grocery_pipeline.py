@@ -114,7 +114,10 @@ def download_kaggle(**context):
     for seed_file in seed_files:
         src = pathlib.Path("/tmp") / seed_file
         if src.exists():
-            shutil.copy2(src, pathlib.Path(dbt_data_dir) / seed_file)
+            dst = pathlib.Path(dbt_data_dir) / seed_file
+            if dst.exists():
+                dst.unlink()
+            shutil.copy2(src, dst)
             print(f"Copied {seed_file} to {dbt_data_dir}")
 
 
@@ -468,22 +471,32 @@ def provision_infrastructure(**context):
 
 def run_spark(**context):
     spark_script = "/opt/airflow/spark/segmentation_reco.py"
+    cluster_master = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077").strip()
+    if not cluster_master:
+        raise ValueError("SPARK_MASTER_URL is required for standalone Spark execution")
+
+    executor_creds_path = os.getenv(
+        "SPARK_EXECUTOR_GOOGLE_APPLICATION_CREDENTIALS",
+        "/opt/spark/conf/gcp-key.json",
+    ).strip()
+
     base_args = [
         "spark-submit",
+        "--master",
+        cluster_master,
+        "--conf",
+        f"spark.executorEnv.GOOGLE_APPLICATION_CREDENTIALS={executor_creds_path}",
+        "--conf",
+        "spark.eventLog.enabled=true",
+        "--conf",
+        "spark.eventLog.dir=file:///opt/airflow/logs/spark-events",
         "--packages",
         "com.google.cloud.spark:spark-bigquery-with-dependencies_2.12:0.34.0",
         spark_script,
     ]
-
-    cluster_cmd = ["spark-submit", "--master", "spark://spark-master:7077"] + base_args[1:]
-
-    try:
-        print("Running Spark job on standalone cluster")
-        subprocess.check_call(cluster_cmd)
-    except subprocess.CalledProcessError:
-        print("Cluster Spark execution failed; retrying in local mode")
-        local_cmd = ["spark-submit", "--master", "local[2]"] + base_args[1:]
-        subprocess.check_call(local_cmd)
+    print(f"Running Spark job on standalone cluster: {cluster_master}")
+    os.umask(0o022)  # ensure event log files are world-readable for spark-history
+    subprocess.check_call(base_args)
 
 
 def refresh_looker_studio(**context):
