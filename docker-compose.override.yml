@@ -4,21 +4,37 @@ services:
     build:
       context: ./airflow
       dockerfile: Dockerfile
+    volumes:
+      - ./gcp-key.json:/tmp/gcp-key.json:ro
 
   airflow-scheduler:
     pull_policy: never
     build:
       context: ./airflow
       dockerfile: Dockerfile
+    volumes:
+      - ./gcp-key.json:/tmp/gcp-key.json:ro
 
   airflow-worker:
     pull_policy: never
     build:
       context: ./airflow
       dockerfile: Dockerfile
+    volumes:
+      - ./gcp-key.json:/tmp/gcp-key.json:ro
 
   airflow-dag-processor:
     pull_policy: never
     build:
       context: ./airflow
       dockerfile: Dockerfile
+    volumes:
+      - ./gcp-key.json:/tmp/gcp-key.json:ro
+
+  spark-master:
+    volumes:
+      - ./gcp-key.json:/tmp/gcp-key.json:ro
+
+  spark-worker:
+    volumes:
+      - ./gcp-key.json:/tmp/gcp-key.json:ro

@@ -259,10 +259,12 @@ KAGGLE_USERNAME=your-kaggle-username
 KAGGLE_KEY=your-kaggle-api-key
 AIRFLOW_JWT_SECRET=airflow-jwt-secret-dev
 LOOKER_STUDIO_REPORT_ID=your-looker-report-id
-GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/gcp-key.json
+GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
 ```
 
-Create a service-account key file named `gcp-key.json` in the project root (same level as `docker-compose.yml`). This file should have actual key value using which you can access GCP.
+#### Local Development Setup
+
+For local development, create a service-account key file named `gcp-key.json` in the project root (same level as `docker-compose.yml`). This file should contain your actual key value for GCP access.
 
 Minimum required IAM roles for the service account:
 - Storage Admin (for GCS upload)
@@ -271,7 +273,11 @@ Minimum required IAM roles for the service account:
 
 The file is mounted into Airflow containers as:
 - Host: `./gcp-key.json`
-- Container path: `/opt/airflow/gcp-key.json`
+- Container path: `/tmp/gcp-key.json` (written by entrypoint from env var in production)
+
+#### Production Deployment
+
+In production (via GitHub Actions CD), the GCP credentials are passed as the `GCP_SA_KEY` GitHub secret (pre-configured in your repository). The CD workflow injects this as the `GOOGLE_APPLICATION_CREDENTIALS_JSON` environment variable, and the container entrypoint writes it to `/tmp/gcp-key.json` at startup. This ensures credentials never persist on the VM filesystem.
 
 Create the local Airflow simple-auth password file from the example:
 
@@ -742,11 +748,13 @@ Airflow DAG fetches secrets at runtime using `CloudSecretManagerHook`.
 | `KAGGLE_USERNAME` | Kaggle username for dataset download |
 | `KAGGLE_KEY` | Kaggle API key/token |
 | `AIRFLOW_JWT_SECRET` | Shared JWT secret for Airflow API auth between services |
-| `GOOGLE_APPLICATION_CREDENTIALS` | In-container credentials path (`/opt/airflow/gcp-key.json`) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | In-container credentials path (`/tmp/gcp-key.json` - written from `GOOGLE_APPLICATION_CREDENTIALS_JSON` env var) |
+| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | GCP service account key JSON (for production: from `GCP_SA_KEY` GitHub secret; for local dev: sourced from `./gcp-key.json` if needed) |
 
 Notes:
 - Keep `.env` in project root so Docker Compose automatically loads it.
-- Do not commit `.env` or `gcp-key.json`.
+- Do not commit `.env` or `gcp-key.json` (local dev only).
+- In production, credentials are passed via GitHub secret and never written to disk on the VM.
 
 ## 🧪 Testing & Quality
 
@@ -780,7 +788,7 @@ flake8 airflow/dags/
     - `docker compose -f docker-compose.yml pull`
     - `docker compose -f docker-compose.yml up -d --remove-orphans`
 4. On this server, deployment checkout path is under the runner home: `/home/runner/grocery-sales-insights`.
-5. CD makes the deployment directory readable/executable for server users. For security, `gcp-key.json` is restricted to mode `600` (owner-only readable) to prevent external testers or other users from accessing GCP credentials. Note: If Airflow containers restart with a different UID, they may lose read access to the file and require manual re-deployment.
+5. GCP credentials are passed as the `GOOGLE_APPLICATION_CREDENTIALS_JSON` environment variable from GitHub secrets and written to a temporary file inside containers at startup (via the entrypoint script), ensuring the credential file never persists on the VM filesystem.
 6. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-dag-processor`) pull and run the exact immutable SHA image.
 7. Spark services continue using pinned upstream images from `docker-compose.yml` (`apache/spark:3.5.8-java17-python3`).
 

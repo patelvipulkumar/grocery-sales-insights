@@ -26,7 +26,7 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
-      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Ftmp%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
@@ -38,7 +38,8 @@ services:
       AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_manager_passwords.json
       AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
       GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
-      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ${GCP_SA_KEY:-}
       RAW_BUCKET: ${RAW_BUCKET:-your-project-id-grocery-raw}
       LOOKER_STUDIO_REPORT_ID: ${LOOKER_STUDIO_REPORT_ID:-your-report-id}
       KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
@@ -50,7 +51,6 @@ services:
       - ./spark:/opt/airflow/spark
       - ./terraform:/opt/airflow/terraform
       - ./airflow/simple_auth_manager_passwords.json:/opt/airflow/simple_auth_manager_passwords.json
-      - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
     ports:
       - "8082:8080"
     command: bash -c "airflow db migrate && airflow api-server"
@@ -67,7 +67,7 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
-      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Ftmp%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
@@ -76,7 +76,8 @@ services:
       AIRFLOW__LOGGING__LOG_LEVEL: INFO
       AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
       GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
-      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ${GCP_SA_KEY:-}
       LOOKER_STUDIO_REPORT_ID: ${LOOKER_STUDIO_REPORT_ID:-your-report-id}
       KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
       KAGGLE_KEY: ${KAGGLE_KEY:-}
@@ -86,7 +87,6 @@ services:
       - ./dbt:/opt/airflow/dbt
       - ./spark:/opt/airflow/spark
       - ./terraform:/opt/airflow/terraform
-      - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
     command: bash -c "airflow db migrate && airflow scheduler"
 
   airflow-worker:
@@ -103,7 +103,7 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
-      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Ftmp%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
@@ -113,9 +113,10 @@ services:
       AIRFLOW__LOGGING__LOG_LEVEL: INFO
       AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
       GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
-      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ${GCP_SA_KEY:-}
       SPARK_MASTER_URL: ${SPARK_MASTER_URL:-spark://spark-master:7077}
-      SPARK_EXECUTOR_GOOGLE_APPLICATION_CREDENTIALS: ${SPARK_EXECUTOR_GOOGLE_APPLICATION_CREDENTIALS:-/opt/spark/conf/gcp-key.json}
+      SPARK_EXECUTOR_GOOGLE_APPLICATION_CREDENTIALS: ${SPARK_EXECUTOR_GOOGLE_APPLICATION_CREDENTIALS:-/tmp/gcp-key.json}
       KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
       KAGGLE_KEY: ${KAGGLE_KEY:-}
     volumes:
@@ -125,7 +126,6 @@ services:
       - ./dbt:/opt/airflow/dbt
       - ./spark:/opt/airflow/spark
       - ./terraform:/opt/airflow/terraform
-      - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
     command: bash -c "airflow celery worker"
 
   airflow-dag-processor:
@@ -140,7 +140,7 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-airflow-jwt-secret-dev}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-airflow-webserver-secret-dev}
-      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fopt%2Fairflow%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
+      AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: google-cloud-platform://?extra__google_cloud_platform__key_path=%2Ftmp%2Fgcp-key.json&extra__google_cloud_platform__project=${GCP_PROJECT:-your-project-id}
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
@@ -149,7 +149,8 @@ services:
       AIRFLOW__LOGGING__LOG_LEVEL: INFO
       AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
       GCP_PROJECT: ${GCP_PROJECT:-your-project-id}
-      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ${GCP_SA_KEY:-}
       KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
       KAGGLE_KEY: ${KAGGLE_KEY:-}
     volumes:
@@ -158,24 +159,20 @@ services:
       - ./dbt:/opt/airflow/dbt
       - ./spark:/opt/airflow/spark
       - ./terraform:/opt/airflow/terraform
-      - ./gcp-key.json:/opt/airflow/gcp-key.json:ro
     command: bash -c "airflow db migrate && airflow dag-processor"
 
   spark-master:
     image: apache/spark:3.5.8-java17-python3
-    command:
-      - /opt/spark/bin/spark-class
-      - org.apache.spark.deploy.master.Master
-      - --host
-      - spark-master
-      - --port
-      - "7077"
-      - --webui-port
-      - "8080"
+    command: >
+      bash -lc '
+      if [ -n "$${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" ]; then
+        printf "%s" "$${GOOGLE_APPLICATION_CREDENTIALS_JSON}" > /tmp/gcp-key.json;
+        chmod 600 /tmp/gcp-key.json;
+      fi;
+      exec /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080'
     environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/opt/spark/conf/gcp-key.json
-    volumes:
-      - ./gcp-key.json:/opt/spark/conf/gcp-key.json:ro
+      - GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
+      - GOOGLE_APPLICATION_CREDENTIALS_JSON=${GCP_SA_KEY:-}
     ports:
       - "7077:7077"
       - "8081:8080"
@@ -184,17 +181,17 @@ services:
     image: apache/spark:3.5.8-java17-python3
     depends_on:
       - spark-master
-    command:
-      - /opt/spark/bin/spark-class
-      - org.apache.spark.deploy.worker.Worker
-      - --webui-port
-      - "8081"
-      - spark://spark-master:7077
+    command: >
+      bash -lc '
+      if [ -n "$${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" ]; then
+        printf "%s" "$${GOOGLE_APPLICATION_CREDENTIALS_JSON}" > /tmp/gcp-key.json;
+        chmod 600 /tmp/gcp-key.json;
+      fi;
+      exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker --webui-port 8081 spark://spark-master:7077'
     environment:
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - GOOGLE_APPLICATION_CREDENTIALS=/opt/spark/conf/gcp-key.json
-    volumes:
-      - ./gcp-key.json:/opt/spark/conf/gcp-key.json:ro
+      - GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
+      - GOOGLE_APPLICATION_CREDENTIALS_JSON=${GCP_SA_KEY:-}
 
   spark-history:
     image: apache/spark:3.5.8-java17-python3

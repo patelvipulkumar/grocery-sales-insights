@@ -193,7 +193,6 @@ jobs:
             if sudo -n true > /dev/null 2>&1; then \
               sudo -n chown -R \"\$USER:\$USER\" \"\$TARGET_DIR\" 2>/dev/null || true; \
             fi && \
-            if [ -d \"\$TARGET_DIR/gcp-key.json\" ]; then rm -rf \"\$TARGET_DIR/gcp-key.json\"; fi && \
             if [ ! -d \"\$TARGET_DIR/.git\" ]; then \
               if [ -n \"\$(ls -A \"\$TARGET_DIR\" 2>/dev/null)\" ]; then rm -rf \"\$TARGET_DIR\"; fi && \
               git clone https://github.com/${{ github.repository }}.git \"\$TARGET_DIR\"; \
@@ -203,7 +202,6 @@ jobs:
             (sudo -n chmod 755 \"\$HOME\" 2>/dev/null || true) && \
             (sudo -n chmod -R a+rX \"\$TARGET_DIR\" 2>/dev/null || true)
           "
-          gcloud compute scp /tmp/gcp-key.json "$GCE_INSTANCE":~/grocery-sales-insights/gcp-key.json --zone="$GCE_ZONE" --quiet
           gcloud compute ssh "$GCE_INSTANCE" --zone="$GCE_ZONE" --quiet --command="
             set -e && \
             TARGET_DIR=\"\$HOME/grocery-sales-insights\" && \
@@ -211,11 +209,6 @@ jobs:
             cd \"\$TARGET_DIR\" && \
             mkdir -p spark-events && \
             sudo -n chmod 777 spark-events && \
-            if [ ! -f gcp-key.json ]; then \
-              echo 'ERROR: gcp-key.json was not copied to the VM as a file.'; \
-              exit 1; \
-            fi && \
-            chmod 600 gcp-key.json && \
             if ! sudo -n true > /dev/null 2>&1; then \
               echo 'ERROR: Remote user requires passwordless sudo for automated deploy.'; \
               echo 'Grant NOPASSWD sudo or add the user to docker group and update workflow.'; \
@@ -232,10 +225,10 @@ jobs:
               echo 'Install Docker Compose v2 and rerun deployment.'; \
               exit 1; \
             fi && \
-            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml pull && \
-            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml up -d --remove-orphans && \
-            (sudo -n chmod -R a+rX \"\$TARGET_DIR\" 2>/dev/null || true) && \
-            chmod 600 gcp-key.json
+            export GCP_SA_KEY='${{ secrets.GCP_SA_KEY }}' && \
+            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} GCP_SA_KEY=\"\$GCP_SA_KEY\" sudo -n docker compose -f docker-compose.yml pull && \
+            DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} GCP_SA_KEY=\"\$GCP_SA_KEY\" sudo -n docker compose -f docker-compose.yml up -d --remove-orphans && \
+            (sudo -n chmod -R a+rX \"\$TARGET_DIR\" 2>/dev/null || true)
           "
           echo "Deployment complete."
         else
