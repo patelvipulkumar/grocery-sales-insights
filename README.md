@@ -779,8 +779,10 @@ flake8 airflow/dags/
 3. CD runs on VM using only base Compose file:
     - `docker compose -f docker-compose.yml pull`
     - `docker compose -f docker-compose.yml up -d --remove-orphans`
-4. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-dag-processor`) pull and run the exact immutable SHA image.
-5. Spark services continue using pinned upstream images from `docker-compose.yml` (`apache/spark:3.5.8-java17-python3`).
+4. On this server, deployment checkout path is under the runner home: `/home/runner/grocery-sales-insights`.
+5. CD makes the deployment directory readable/executable for server users. For container compatibility, `gcp-key.json` is set to `644` so Airflow services can read the mounted key file.
+6. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-dag-processor`) pull and run the exact immutable SHA image.
+7. Spark services continue using pinned upstream images from `docker-compose.yml` (`apache/spark:3.5.8-java17-python3`).
 
 Local development note:
 - Keep using `docker-compose up -d` locally. `docker-compose.override.yml` retains local build-based behavior for Airflow services.
@@ -788,7 +790,7 @@ Local development note:
 Quick Verify on VM (after CD deploy):
 
 ```bash
-cd /opt/grocery-sales-insights
+cd /home/runner/grocery-sales-insights
 docker compose ps
 
 # Verify Airflow services are running the expected immutable tag
@@ -876,6 +878,7 @@ docker-compose up
 
 ## 📚 Documentation
 
+- [Project Snippet (with screenshots)](Projects%20Snippet.docx) — Project notes and screenshot walkthrough
 - [DBT Docs](https://docs.getdbt.com/) — Data transformation best practices
 - [Airflow Docs](https://airflow.apache.org/) — Workflow orchestration guide
 - [Terraform Docs](https://www.terraform.io/docs/providers/google) — GCP resource management
