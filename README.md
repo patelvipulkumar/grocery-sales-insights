@@ -780,7 +780,7 @@ flake8 airflow/dags/
     - `docker compose -f docker-compose.yml pull`
     - `docker compose -f docker-compose.yml up -d --remove-orphans`
 4. On this server, deployment checkout path is under the runner home: `/home/runner/grocery-sales-insights`.
-5. CD makes the deployment directory readable/executable for server users. For container compatibility, `gcp-key.json` is set to `644` so Airflow services can read the mounted key file.
+5. CD makes the deployment directory readable/executable for server users. For container compatibility, `gcp-key.json` is set to `640` (owner + group readable) so Airflow services in the `docker` group can read the mounted key file.
 6. Airflow services (`airflow-webserver`, `airflow-scheduler`, `airflow-worker`, `airflow-dag-processor`) pull and run the exact immutable SHA image.
 7. Spark services continue using pinned upstream images from `docker-compose.yml` (`apache/spark:3.5.8-java17-python3`).
 

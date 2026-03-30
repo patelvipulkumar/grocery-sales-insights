@@ -215,7 +215,7 @@ jobs:
               echo 'ERROR: gcp-key.json was not copied to the VM as a file.'; \
               exit 1; \
             fi && \
-            chmod 644 gcp-key.json && \
+            chmod 640 gcp-key.json && \
             if ! sudo -n true > /dev/null 2>&1; then \
               echo 'ERROR: Remote user requires passwordless sudo for automated deploy.'; \
               echo 'Grant NOPASSWD sudo or add the user to docker group and update workflow.'; \
@@ -235,7 +235,7 @@ jobs:
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml pull && \
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} sudo -n docker compose -f docker-compose.yml up -d --remove-orphans && \
             (sudo -n chmod -R a+rX \"\$TARGET_DIR\" 2>/dev/null || true) && \
-            chmod 644 gcp-key.json
+            chmod 640 gcp-key.json
           "
           echo "Deployment complete."
         else
