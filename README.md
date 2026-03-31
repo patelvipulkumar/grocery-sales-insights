@@ -698,33 +698,42 @@ Notes:
 
 ```
 .
-├── .github/workflows/           # GitHub Actions CI/CD
-│   ├── ci.yml                  # Lint, compile, test on push/PR
-│   └── cd.yml                  # Build, deploy to GCP
+├── .github/workflows/           # GitHub Actions CI/CD configs
+│   ├── ci.yml
+│   └── cd.yml
 ├── airflow/
 │   ├── dags/
 │   │   └── grocery_pipeline.py # Main Airflow DAG
 │   ├── Dockerfile              # Airflow custom image
-│   └── requirements.txt         # Python dependencies
+│   ├── entrypoint.sh           # Entrypoint script
+│   └── requirements.txt        # Airflow Python dependencies
 ├── dbt/
 │   ├── models/
-│   │   ├── staging/            # Raw data transformations
-│   │   ├── marts/              # Business-ready tables
-│   │   └── sources.yml         # Source definitions
+│   │   ├── staging/
+│   │   ├── marts/
+│   │   ├── intermediate/
+│   │   └── sources.yml
 │   ├── data/                   # Seed files (categories, cities, countries)
-│   ├── profiles.yml            # BigQuery connection config
-│   └── dbt_project.yml
+│   ├── macros/
+│   ├── profiles.yml
+│   ├── dbt_project.yml
+│   ├── packages.yml
+│   └── requirements.txt
 ├── spark/
-│   └── segmentation_reco.py    # ML pipeline for segmentation
+│   └── segmentation_reco.py    # Spark ML pipeline
 ├── terraform/
-│   ├── main.tf                 # GCP resource definitions
-│   ├── variables.tf            # Input variables
-│   ├── outputs.tf              # Output values
-│   └── versions.tf             # Terraform version lock
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── terraform.tfstate.backup
 ├── docker-compose.yml          # Local orchestration
+├── docker-compose.override.yml # Local-only overrides (not for prod)
+├── pyproject.toml              # Python project config (if present)
 ├── README.md
-└── ARCHITECTURE.md             # Detailed component documentation
+├── LOOKER_STUDIO_6_PAGE.local.md # Dashboard build guide
+└── .gitignore
 ```
+*Note: Local secrets, logs, runtime artifacts, and files listed in .gitignore are intentionally excluded from this structure.*
 
 ## 🔐 Secrets Management
 
