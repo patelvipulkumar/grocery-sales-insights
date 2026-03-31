@@ -1,5 +1,0 @@
-project_id              = "project-ba995651-8202-4620-8c2"
-region                  = "us-west1-a"
-kaggle_api_token        = "KGAT_8be9f6bca6934321dc4ec5d6665e50c3"
-looker_studio_report_id = "5047d0a5-d949-48dd-bdb5-171e45e58c0f"
-airflow_db_password     = "airflow"
