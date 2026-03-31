@@ -200,7 +200,7 @@ jobs:
               sudo -n git clone https://github.com/${{ github.repository }}.git \"\$TARGET_DIR\"; \
             fi && \
             sudo -n git -C \"\$TARGET_DIR\" pull --ff-only && \
-            (sudo -n chmod -R a+rX \"\$TARGET_DIR\" 2>/dev/null || true)
+            sudo -n chmod -R a+rwX \"\$TARGET_DIR\"
           "
           gcloud compute ssh "$GCE_INSTANCE" --zone="$GCE_ZONE" --quiet --command="
             set -e && \
@@ -228,7 +228,7 @@ jobs:
             GCP_SA_KEY=\"\$(printf '%s' \"\$GCP_SA_KEY_B64\" | base64 -d)\" && \
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} GCP_SA_KEY=\"\$GCP_SA_KEY\" sudo -n docker compose -f docker-compose.yml pull && \
             DOCKER_IMAGE_REPOSITORY=$DOCKER_IMAGE AIRFLOW_IMAGE_TAG=${{ github.sha }} GCP_SA_KEY=\"\$GCP_SA_KEY\" sudo -n docker compose -f docker-compose.yml up -d --remove-orphans && \
-            (sudo -n chmod -R a+rX \"\$TARGET_DIR\" 2>/dev/null || true)
+            sudo -n chmod -R a+rwX \"\$TARGET_DIR\"
           "
           echo "Deployment complete."
         else
