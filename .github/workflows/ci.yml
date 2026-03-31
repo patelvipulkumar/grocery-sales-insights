@@ -61,11 +61,14 @@ jobs:
         pip install -r airflow/requirements.txt
         pip install -r dbt/requirements.txt || true
 
+
     - name: Prepare dbt credentials env
       env:
         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       run: |
+        # Ensure /tmp/gcp-key.json is not a directory or stale file
+        rm -rf /tmp/gcp-key.json
         if [ -n "$GCP_SA_KEY" ]; then
           echo "$GCP_SA_KEY" > /tmp/gcp-key.json
         elif [ -f "$GITHUB_WORKSPACE/gcp-key.json" ]; then
